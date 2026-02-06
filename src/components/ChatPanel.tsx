@@ -1,14 +1,15 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useStudioStore, extractCode } from '@/lib/store';
-import { Send, Loader2 } from 'lucide-react';
+import { Send, Loader2, RefreshCw, AlertCircle } from 'lucide-react';
 
 export function ChatPanel() {
   const [input, setInput] = useState('');
+  const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode } = useStudioStore();
 
@@ -19,12 +20,10 @@ export function ChatPanel() {
     }
   }, [messages]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!input.trim() || isLoading) return;
+  const sendMessage = useCallback(async (userMessage: string) => {
+    if (!userMessage.trim() || isLoading) return;
 
-    const userMessage = input.trim();
-    setInput('');
+    setRetryMessage(userMessage);
     
     // Add user message
     addMessage({ role: 'user', content: userMessage });
@@ -45,7 +44,19 @@ export function ChatPanel() {
         }),
       });
 
-      if (!response.ok) throw new Error('Failed to get response');
+      if (!response.ok) {
+        const contentType = response.headers.get('content-type');
+        let errorMessage = 'Unknown error';
+        
+        if (contentType?.includes('application/json')) {
+          const errorJson = await response.json().catch(() => ({}));
+          errorMessage = errorJson.error || `API error (${response.status})`;
+        } else {
+          errorMessage = await response.text().catch(() => 'Unknown error');
+        }
+        
+        throw new Error(errorMessage);
+      }
 
       const reader = response.body?.getReader();
       const decoder = new TextDecoder();
@@ -65,11 +76,29 @@ export function ChatPanel() {
           setCurrentCode(code);
         }
       }
+      
+      setRetryMessage(null);
     } catch (error) {
       console.error('Chat error:', error);
-      updateLastMessage('Sorry, something went wrong. Please try again.');
+      const errorMsg = error instanceof Error ? error.message : 'Something went wrong';
+      updateLastMessage(`⚠️ Error: ${errorMsg}\n\nClick the retry button to try again.`);
     } finally {
       setIsLoading(false);
+    }
+  }, [messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode]);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    const userMessage = input.trim();
+    setInput('');
+    await sendMessage(userMessage);
+  };
+
+  const handleRetry = () => {
+    if (retryMessage) {
+      // Remove the last two messages (user + failed assistant response)
+      // Then resend
+      sendMessage(retryMessage);
     }
   };
 
@@ -89,7 +118,12 @@ export function ChatPanel() {
           {messages.length === 0 && (
             <div className="text-center text-zinc-500 py-8">
               <p className="text-lg mb-2">🎵 Welcome to Strudel Studio</p>
-              <p className="text-sm">Try: "Make me a techno beat at 130 BPM"</p>
+              <p className="text-sm mb-4">Try: &quot;Make me a techno beat at 130 BPM&quot;</p>
+              <div className="text-xs text-zinc-600 space-y-1">
+                <p>• &quot;Create a chill ambient pad&quot;</p>
+                <p>• &quot;Give me some drum and bass&quot;</p>
+                <p>• &quot;Add some filter sweeps&quot;</p>
+              </div>
             </div>
           )}
           
@@ -110,11 +144,35 @@ export function ChatPanel() {
                     <Loader2 className="w-4 h-4 animate-spin" />
                   )}
                 </div>
+                
+                {/* Retry button for failed messages */}
+                {message.role === 'assistant' && 
+                 message.content.includes('⚠️ Error') && 
+                 retryMessage && 
+                 !isLoading && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={handleRetry}
+                    className="mt-2 border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+                  >
+                    <RefreshCw className="w-3 h-3 mr-1" />
+                    Retry
+                  </Button>
+                )}
               </div>
             </div>
           ))}
         </div>
       </ScrollArea>
+
+      {/* API Key Warning */}
+      {process.env.NODE_ENV === 'development' && (
+        <div className="px-4 py-2 bg-yellow-900/30 border-t border-yellow-800/50 text-xs text-yellow-200/70">
+          <AlertCircle className="w-3 h-3 inline mr-1" />
+          Make sure OPENAI_API_KEY is set in .env.local
+        </div>
+      )}
 
       {/* Input */}
       <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800">

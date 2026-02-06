@@ -1,10 +1,6 @@
 import { NextRequest } from 'next/server';
 import OpenAI from 'openai';
 
-const openai = new OpenAI({
-  apiKey: process.env.OPENAI_API_KEY,
-});
-
 const SYSTEM_PROMPT = `You are a professional electronic music producer and Strudel expert. You create live-coded music using the Strudel library (https://strudel.cc).
 
 When generating music:
@@ -33,8 +29,35 @@ Always respond with:
 Keep responses concise but include all the code needed to play the pattern.`;
 
 export async function POST(req: NextRequest) {
+  // Check for API key first
+  const apiKey = process.env.OPENAI_API_KEY;
+  
+  if (!apiKey || apiKey === 'sk-...') {
+    console.error('Chat API error: OPENAI_API_KEY not configured');
+    return new Response(
+      JSON.stringify({ 
+        error: 'API key not configured. Please add OPENAI_API_KEY to .env.local' 
+      }), 
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
+  }
+
   try {
+    const openai = new OpenAI({ apiKey });
     const { messages } = await req.json();
+
+    if (!messages || !Array.isArray(messages)) {
+      return new Response(
+        JSON.stringify({ error: 'Invalid request: messages array required' }),
+        { 
+          status: 400,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
 
     const response = await openai.chat.completions.create({
       model: 'gpt-4-turbo-preview',
@@ -51,13 +74,18 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const stream = new ReadableStream({
       async start(controller) {
-        for await (const chunk of response) {
-          const content = chunk.choices[0]?.delta?.content || '';
-          if (content) {
-            controller.enqueue(encoder.encode(content));
+        try {
+          for await (const chunk of response) {
+            const content = chunk.choices[0]?.delta?.content || '';
+            if (content) {
+              controller.enqueue(encoder.encode(content));
+            }
           }
+          controller.close();
+        } catch (streamError) {
+          console.error('Stream error:', streamError);
+          controller.error(streamError);
         }
-        controller.close();
       },
     });
 
@@ -69,6 +97,30 @@ export async function POST(req: NextRequest) {
     });
   } catch (error) {
     console.error('Chat API error:', error);
-    return new Response('Error generating response', { status: 500 });
+    
+    // Handle specific OpenAI errors
+    if (error instanceof OpenAI.APIError) {
+      const message = error.status === 401 
+        ? 'Invalid API key. Please check your OPENAI_API_KEY.'
+        : error.status === 429
+        ? 'Rate limit exceeded. Please wait and try again.'
+        : `OpenAI API error: ${error.message}`;
+      
+      return new Response(
+        JSON.stringify({ error: message }),
+        { 
+          status: error.status || 500,
+          headers: { 'Content-Type': 'application/json' }
+        }
+      );
+    }
+    
+    return new Response(
+      JSON.stringify({ error: 'Failed to generate response. Please try again.' }),
+      { 
+        status: 500,
+        headers: { 'Content-Type': 'application/json' }
+      }
+    );
   }
 }

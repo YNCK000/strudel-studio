@@ -3,17 +3,22 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useStudioStore } from '@/lib/store';
-import { Play, Square, Copy, Check, Volume2 } from 'lucide-react';
+import { Play, Square, Copy, Check, Volume2, AlertCircle, Loader2 } from 'lucide-react';
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
+import { initStrudel, stopStrudel, isStrudelReady, type StrudelInstance } from '@/lib/strudel';
 
 export function CodePanel() {
   const editorRef = useRef<HTMLDivElement>(null);
   const viewRef = useRef<EditorView | null>(null);
-  const [copied, setCopied] = useState(false);
+  const strudelRef = useRef<StrudelInstance | null>(null);
   
-  const { currentCode, isPlaying, setCurrentCode, setIsPlaying } = useStudioStore();
+  const [copied, setCopied] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [isInitializing, setIsInitializing] = useState(false);
+  
+  const { currentCode, isPlaying, setCurrentCode, setIsPlaying, volume } = useStudioStore();
 
   // Initialize CodeMirror
   useEffect(() => {
@@ -67,17 +72,47 @@ export function CodePanel() {
     }
   }, [currentCode]);
 
-  const handlePlay = useCallback(() => {
-    // TODO: Integrate with Strudel web audio
-    setIsPlaying(!isPlaying);
+  // Handle keyboard shortcut
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+        e.preventDefault();
+        handlePlay();
+      }
+    };
     
-    if (!isPlaying) {
-      // Start playback
-      console.log('Playing:', currentCode);
-      // Will integrate @strudel/web here
-    } else {
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [currentCode, isPlaying]);
+
+  const handlePlay = useCallback(async () => {
+    setError(null);
+    
+    if (isPlaying) {
       // Stop playback
-      console.log('Stopped');
+      stopStrudel();
+      setIsPlaying(false);
+      return;
+    }
+    
+    // Start playback
+    try {
+      setIsInitializing(true);
+      
+      // Initialize Strudel if needed (requires user interaction)
+      if (!strudelRef.current || !isStrudelReady()) {
+        strudelRef.current = await initStrudel();
+      }
+      
+      // Evaluate and play the code
+      await strudelRef.current.evaluate(currentCode);
+      setIsPlaying(true);
+    } catch (err) {
+      console.error('Playback error:', err);
+      setError(err instanceof Error ? err.message : 'Failed to play');
+      setIsPlaying(false);
+    } finally {
+      setIsInitializing(false);
     }
   }, [isPlaying, currentCode, setIsPlaying]);
 
@@ -114,6 +149,20 @@ export function CodePanel() {
         </div>
       </div>
 
+      {/* Error Banner */}
+      {error && (
+        <div className="px-4 py-2 bg-red-900/50 border-b border-red-800 flex items-center gap-2">
+          <AlertCircle className="w-4 h-4 text-red-400" />
+          <span className="text-sm text-red-200">{error}</span>
+          <button 
+            onClick={() => setError(null)}
+            className="ml-auto text-red-400 hover:text-red-300 text-sm"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {/* Editor */}
       <div ref={editorRef} className="flex-1 overflow-hidden" />
 
@@ -121,13 +170,18 @@ export function CodePanel() {
       <div className="p-4 border-t border-zinc-800 flex items-center gap-4">
         <Button
           onClick={handlePlay}
+          disabled={isInitializing}
           className={`${
             isPlaying 
               ? 'bg-red-600 hover:bg-red-700' 
               : 'bg-green-600 hover:bg-green-700'
           } text-white px-6`}
         >
-          {isPlaying ? (
+          {isInitializing ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" /> Loading...
+            </>
+          ) : isPlaying ? (
             <>
               <Square className="w-4 h-4 mr-2" /> Stop
             </>
@@ -144,7 +198,7 @@ export function CodePanel() {
             type="range"
             min="0"
             max="100"
-            defaultValue="80"
+            defaultValue={volume * 100}
             className="w-24 accent-purple-600"
           />
         </div>
