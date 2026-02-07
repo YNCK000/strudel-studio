@@ -53,7 +53,7 @@ House: 120-128 | Techno: 130-140 | Trap: 140 (half-time)
 DnB: 170-180 | Hip-Hop: 85-100 | Dubstep: 140
 
 ## DO NOT use (hallucinations)
-- .glide(), .portamento(), .slide(), .volume()
+- .glide(), .portamento(), .slide(), .volume(), .tempo()
 
 ## Quality Checklist
 1. setcps(BPM/4/60) first line

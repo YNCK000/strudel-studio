@@ -29,9 +29,9 @@ export function validateStrudelCode(code: string): ValidationResult {
   }
 
   // 2. Check for required elements
-  // Accept both setcps() and .tempo() for BPM setting
-  if (!code.includes('setcps(') && !code.includes('.tempo(')) {
-    errors.push('Missing tempo - set BPM using setcps(130/4/60) or .tempo(130)');
+  // MUST use setcps() for BPM - .tempo() is NOT a real Strudel function
+  if (!code.includes('setcps(')) {
+    errors.push('Missing tempo - set BPM using setcps(BPM/4/60), e.g. setcps(130/4/60) for 130 BPM');
   }
 
   // Check for playable expression (stack, arrange, or pattern at top level)

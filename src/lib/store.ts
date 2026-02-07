@@ -42,11 +42,13 @@ export const useStudioStore = create<StudioState>((set) => ({
 // Start chatting to generate music...
 // Click Play or press Cmd+Enter to hear the beat
 
+setcps(120/4/60) // 120 BPM
+
 stack(
   s("bd*4"),
   s("~ sd ~ sd"),
   s("hh*8")
-).tempo(120)`,
+)`,
   isPlaying: false,
   volume: 0.8,
   
