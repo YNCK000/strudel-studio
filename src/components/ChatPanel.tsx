@@ -4,7 +4,7 @@ import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useStudioStore, extractCode, type Message } from '@/lib/store';
-import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle2, Clock, Trash2, Sparkles, Music, Drum, Waves } from 'lucide-react';
+import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle2, XCircle, Clock, Trash2, Sparkles, Music, Drum, Waves, Copy, Check } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
 
@@ -65,8 +65,21 @@ const ChatMessage = memo(function ChatMessage({
   mode: Mode;
   onRetry: () => void;
 }) {
+  const [copied, setCopied] = useState(false);
   const isUser = message.role === 'user';
   const hasError = message.content.includes('⚠️');
+  
+  // Extract code from message for copy button
+  const codeMatch = message.content.match(/```(?:javascript|js)?\s*([\s\S]*?)```/);
+  const hasCode = codeMatch && codeMatch[1]?.trim();
+  
+  const handleCopyCode = () => {
+    if (hasCode) {
+      navigator.clipboard.writeText(codeMatch![1].trim());
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }
+  };
   
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
@@ -82,13 +95,20 @@ const ChatMessage = memo(function ChatMessage({
           {message.content || (isLast && isLoading && <LoadingIndicator mode={mode} />)}
         </div>
         
-        {/* Metadata for successful generations */}
+        {/* Metadata for generations */}
         {!isUser && message.validated !== undefined && !hasError && (
           <div className="mt-3 pt-2 border-t border-zinc-700/50 flex items-center gap-3 text-xs">
-            <span className="flex items-center gap-1.5 text-emerald-400">
-              <CheckCircle2 className="w-3.5 h-3.5" />
-              Validated
-            </span>
+            {message.validated === true ? (
+              <span className="flex items-center gap-1.5 text-emerald-400">
+                <CheckCircle2 className="w-3.5 h-3.5" />
+                Validated
+              </span>
+            ) : message.validated === false ? (
+              <span className="flex items-center gap-1.5 text-red-400">
+                <XCircle className="w-3.5 h-3.5" />
+                Validation failed
+              </span>
+            ) : null}
             {message.timeMs && (
               <span className="flex items-center gap-1.5 text-zinc-500">
                 <Clock className="w-3.5 h-3.5" />
@@ -101,6 +121,26 @@ const ChatMessage = memo(function ChatMessage({
               </span>
             )}
           </div>
+        )}
+        
+        {/* Copy code button for messages with code */}
+        {!isUser && hasCode && !isLoading && (
+          <button
+            onClick={handleCopyCode}
+            className="mt-2 flex items-center gap-1.5 text-xs font-medium text-zinc-400 hover:text-white transition-colors"
+          >
+            {copied ? (
+              <>
+                <Check className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-400">Copied!</span>
+              </>
+            ) : (
+              <>
+                <Copy className="w-3.5 h-3.5" />
+                Copy code
+              </>
+            )}
+          </button>
         )}
         
         {/* Retry button for errors */}
@@ -193,31 +233,40 @@ export function ChatPanel() {
     inputRef.current?.focus();
   }, []);
 
-  // Parse SSE event from stream chunk
-  const parseSSE = (chunk: string): Array<{ event: string; data: unknown }> => {
+  // Parse SSE events from stream buffer, returns { events, remaining }
+  const parseSSE = useCallback((buffer: string): { events: Array<{ event: string; data: unknown }>; remaining: string } => {
     const events: Array<{ event: string; data: unknown }> = [];
-    const lines = chunk.split('\n');
-    let currentEvent = '';
-    let currentData = '';
+    const blocks = buffer.split('\n\n');
     
-    for (const line of lines) {
-      if (line.startsWith('event: ')) {
-        currentEvent = line.slice(7);
-      } else if (line.startsWith('data: ')) {
-        currentData = line.slice(6);
-        if (currentEvent && currentData) {
-          try {
-            events.push({ event: currentEvent, data: JSON.parse(currentData) });
-          } catch {
-            console.warn('Failed to parse SSE data:', currentData);
-          }
-          currentEvent = '';
-          currentData = '';
+    // Last block may be incomplete, keep it in remaining
+    const remaining = blocks.pop() || '';
+    
+    for (const block of blocks) {
+      if (!block.trim()) continue;
+      
+      const lines = block.split('\n');
+      let currentEvent = '';
+      let currentData = '';
+      
+      for (const line of lines) {
+        if (line.startsWith('event: ')) {
+          currentEvent = line.slice(7);
+        } else if (line.startsWith('data: ')) {
+          currentData = line.slice(6);
+        }
+      }
+      
+      if (currentEvent && currentData) {
+        try {
+          events.push({ event: currentEvent, data: JSON.parse(currentData) });
+        } catch {
+          console.warn('Failed to parse SSE data:', currentData);
         }
       }
     }
-    return events;
-  };
+    
+    return { events, remaining };
+  }, []);
 
   const sendMessage = useCallback(async (userMessage: string) => {
     if (!userMessage.trim() || isLoading) return;
@@ -265,8 +314,8 @@ export function ChatPanel() {
           if (done) break;
           
           buffer += decoder.decode(value, { stream: true });
-          const events = parseSSE(buffer);
-          buffer = '';
+          const { events, remaining } = parseSSE(buffer);
+          buffer = remaining;
           
           for (const { event, data } of events) {
             const eventData = data as Record<string, unknown>;
@@ -280,7 +329,7 @@ export function ChatPanel() {
               case 'complete':
                 const content = (eventData.content as string) || '';
                 updateLastMessage(content, {
-                  validated: eventData.validated as boolean ?? true,
+                  validated: eventData.validated as boolean,
                   iterations: eventData.iterations as number,
                   timeMs: eventData.timeMs as number,
                 });

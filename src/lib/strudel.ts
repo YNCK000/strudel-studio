@@ -18,6 +18,7 @@ let strudelRepl: any = null;
 let isInitialized = false;
 let samplesLoaded = false;
 let audioContext: AudioContext | null = null;
+let masterGainNode: GainNode | null = null;
 let initProgress: 'idle' | 'audio' | 'samples' | 'ready' = 'idle';
 
 /**
@@ -81,6 +82,21 @@ export async function initStrudel(): Promise<StrudelInstance> {
 
     // Initialize superdough (web audio output)
     await webaudio.initAudio();
+    
+    // Create master gain node for volume control
+    const webAudioCtx = webaudio.getAudioContext();
+    if (webAudioCtx && !masterGainNode) {
+      masterGainNode = webAudioCtx.createGain();
+      masterGainNode.gain.value = 0.8; // Default 80%
+      masterGainNode.connect(webAudioCtx.destination);
+      
+      // Patch the destination so Strudel routes through our gain node
+      // Use type assertion since setDestination may exist at runtime but not in types
+      const webAudioModule = webaudio as Record<string, unknown>;
+      if (typeof webAudioModule.setDestination === 'function') {
+        (webAudioModule.setDestination as (dest: AudioNode) => void)(masterGainNode);
+      }
+    }
     
     // Register all Strudel functions in global scope
     await evalScope(
@@ -181,4 +197,21 @@ export function isStrudelReady(): boolean {
  */
 export function getAudioCtx(): AudioContext | null {
   return audioContext;
+}
+
+/**
+ * Set master volume (0-100)
+ */
+export function setVolume(value: number): void {
+  const gain = Math.max(0, Math.min(1, value / 100));
+  if (masterGainNode) {
+    masterGainNode.gain.setValueAtTime(gain, masterGainNode.context.currentTime);
+  }
+}
+
+/**
+ * Get the master gain node
+ */
+export function getMasterGain(): GainNode | null {
+  return masterGainNode;
 }

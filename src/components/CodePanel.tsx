@@ -7,7 +7,7 @@ import { Play, Square, Copy, Check, Volume2, VolumeX, AlertCircle, Loader2, Code
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { initStrudel, stopStrudel, isStrudelReady, getInitProgress, type StrudelInstance } from '@/lib/strudel';
+import { initStrudel, stopStrudel, isStrudelReady, getInitProgress, setVolume, type StrudelInstance } from '@/lib/strudel';
 
 export function CodePanel() {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -69,6 +69,21 @@ export function CodePanel() {
     }
   }, [currentCode]);
 
+  // Update volume when slider changes
+  useEffect(() => {
+    setVolume(volumeValue);
+  }, [volumeValue]);
+
+  // Clear error when code changes from external source (new generation)
+  const prevCodeRef = useRef(currentCode);
+  useEffect(() => {
+    if (currentCode !== prevCodeRef.current) {
+      // Code changed externally, clear any existing error
+      if (error) setError(null);
+      prevCodeRef.current = currentCode;
+    }
+  }, [currentCode, error]);
+
   // Handle keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -91,6 +106,13 @@ export function CodePanel() {
       return;
     }
     
+    // Handle empty code
+    const trimmedCode = currentCode.trim();
+    if (!trimmedCode) {
+      setError('No code to play. Write some Strudel code first!');
+      return;
+    }
+    
     try {
       setIsInitializing(true);
       
@@ -107,7 +129,7 @@ export function CodePanel() {
         }
       }
       
-      await strudelRef.current.evaluate(currentCode);
+      await strudelRef.current.evaluate(trimmedCode);
       setIsPlaying(true);
     } catch (err) {
       console.error('Playback error:', err);
@@ -162,14 +184,17 @@ export function CodePanel() {
 
       {/* Error Banner */}
       {error && (
-        <div className="px-4 py-3 bg-red-500/10 border-b border-red-500/20 flex items-center gap-3 animate-fade-in">
-          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-red-500/20 shrink-0">
+        <div className="px-4 py-3 bg-red-500/15 border-b-2 border-red-500/40 flex items-center gap-3 animate-fade-in shadow-[0_4px_12px_-2px_rgba(239,68,68,0.2)]">
+          <div className="flex items-center justify-center w-7 h-7 rounded-full bg-red-500/25 shrink-0 animate-pulse">
             <AlertCircle className="w-4 h-4 text-red-400" />
           </div>
-          <span className="text-sm text-red-200 flex-1 min-w-0 truncate">{error}</span>
+          <div className="flex-1 min-w-0">
+            <span className="text-sm font-medium text-red-300 block">Playback Error</span>
+            <span className="text-xs text-red-200/80 block truncate">{error}</span>
+          </div>
           <button 
             onClick={() => setError(null)}
-            className="p-1 rounded hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
+            className="p-1.5 rounded-lg hover:bg-red-500/20 text-red-400 transition-colors shrink-0"
           >
             <X className="w-4 h-4" />
           </button>
