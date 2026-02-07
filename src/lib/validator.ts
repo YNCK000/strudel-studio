@@ -28,61 +28,40 @@ export function validateStrudelCode(code: string): ValidationResult {
     return { valid: false, errors, warnings };
   }
 
-  // 2. Check for required elements
-  // MUST use setcps() for BPM - .tempo() is NOT a real Strudel function
+  // 2. Check for tempo setting
   if (!code.includes('setcps(')) {
-    errors.push('Missing tempo - set BPM using setcps(BPM/4/60), e.g. setcps(130/4/60) for 130 BPM');
+    errors.push('Missing tempo - use setcps(BPM/4/60), e.g. setcps(130/4/60)');
   }
 
-  // Check for playable expression (stack, arrange, or pattern at top level)
+  // 3. Check for playable expression
   const hasPlayable = 
     code.includes('stack(') || 
     code.includes('arrange(') ||
-    code.match(/^[a-z_][a-z0-9_]*\s*$/im) || // Variable reference at end
-    code.match(/\)\s*$/); // Ends with function call
+    code.includes('cat(') ||
+    code.includes('sequence(') ||
+    // Ends with a function call or variable
+    /\)\s*$/.test(code.trim()) ||
+    /^[a-z_][a-z0-9_]*\s*$/im.test(code.trim().split('\n').pop() || '');
     
   if (!hasPlayable) {
-    warnings.push('Code may not have a playable expression. Ensure it ends with stack(), arrange(), or a pattern.');
+    warnings.push('Code should end with stack(), arrange(), or a pattern expression');
   }
 
-  // 3. Check for common mistakes
+  // 4. Check for hallucinated functions
+  const hallucinations = ['.tempo(', '.glide(', '.portamento(', '.slide(', '.volume('];
+  for (const h of hallucinations) {
+    if (code.includes(h)) {
+      errors.push(`"${h.slice(1, -1)}" is not a real Strudel function`);
+    }
+  }
+
+  // 5. Check for obvious mistakes
   if (code.includes('undefined')) {
-    errors.push('Code contains "undefined" - check variable names are defined before use');
+    warnings.push('Code contains "undefined" - check variable names');
   }
 
-  if (code.match(/\blet\s+\w+\s*=\s*;/)) {
-    errors.push('Found empty variable assignment (let x = ;)');
-  }
-
-  // 4. Check for Strudel-specific issues
-  if (code.includes('.s(') && !code.includes('note(') && !code.includes('s(')) {
-    warnings.push('.s() is typically used after note(). For drums, use s("bd") directly.');
-  }
-
-  // Check for missing quotes in pattern strings
-  const patterns = code.match(/s\(([^)]+)\)/g) || [];
-  for (const pattern of patterns) {
-    if (!pattern.includes('"') && !pattern.includes("'") && !pattern.includes('`')) {
-      errors.push(`Pattern ${pattern} might be missing quotes. Use s("bd") not s(bd)`);
-    }
-  }
-
-  // 5. Check for anti-patterns (warnings)
-  // Check if same variable used multiple times in arrange
-  const arrangeMatch = code.match(/arrange\(\s*(\[[\s\S]*?\](?:\s*,\s*\[[\s\S]*?\])*)\s*\)/);
-  if (arrangeMatch) {
-    const sections = arrangeMatch[1].match(/\[\d+,\s*(\w+)\]/g) || [];
-    const vars = sections.map(s => s.match(/,\s*(\w+)/)?.[1]).filter(Boolean);
-    const unique = new Set(vars);
-    if (vars.length > 2 && unique.size < vars.length / 2) {
-      warnings.push('Anti-pattern: Same sections repeated in arrange(). Add variation between drops!');
-    }
-  }
-
-  // Check for very long method chains without variables
-  const longChains = code.match(/\)\.[a-z]+\([^)]*\)\.[a-z]+\([^)]*\)\.[a-z]+\([^)]*\)\.[a-z]+\([^)]*\)\.[a-z]+\(/g);
-  if (longChains && longChains.length > 3) {
-    warnings.push('Consider breaking long method chains into variables for readability');
+  if (/\blet\s+\w+\s*=\s*;/.test(code)) {
+    errors.push('Empty variable assignment found');
   }
 
   return { 
