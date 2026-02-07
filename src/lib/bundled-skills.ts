@@ -1,7 +1,7 @@
 /**
  * Bundled Strudel skills - AUTO-GENERATED
  * DO NOT EDIT - Run 'npm run bundle-skills' to regenerate
- * Generated: 2026-02-07T13:50:07.846Z
+ * Generated: 2026-02-07T13:58:08.012Z
  */
 
 export const BUNDLED_SKILL: Record<string, string> = {

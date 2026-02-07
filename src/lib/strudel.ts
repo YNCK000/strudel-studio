@@ -15,6 +15,7 @@ export interface StrudelInstance {
 
 // Global state
 let strudelRepl: any = null;
+let strudelTranspiler: any = null;
 let isInitialized = false;
 let samplesLoaded = false;
 let audioContext: AudioContext | null = null;
@@ -67,6 +68,7 @@ export async function initStrudel(): Promise<StrudelInstance> {
     const [
       { repl },
       { evalScope },
+      { transpiler },
       core,
       mini,
       webaudio,
@@ -74,11 +76,15 @@ export async function initStrudel(): Promise<StrudelInstance> {
     ] = await Promise.all([
       import('@strudel/core/repl.mjs'),
       import('@strudel/core/evaluate.mjs'),
+      import('@strudel/transpiler'),
       import('@strudel/core'),
       import('@strudel/mini'),
       import('@strudel/webaudio'),
       import('@strudel/tonal'),
     ]);
+    
+    // Store transpiler for code evaluation
+    strudelTranspiler = transpiler;
 
     // Initialize superdough (web audio output)
     await webaudio.initAudio();
@@ -128,10 +134,11 @@ export async function initStrudel(): Promise<StrudelInstance> {
       }
     }
 
-    // Create the REPL instance
+    // Create the REPL instance with transpiler for proper code evaluation
     strudelRepl = repl({
       defaultOutput: webaudio.webaudioOutput,
       getTime: () => webaudio.getAudioContext().currentTime,
+      transpiler: strudelTranspiler,
       beforeStart: async () => {
         // Ensure audio context is running
         const ctx = webaudio.getAudioContext();

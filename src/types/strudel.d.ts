@@ -1,80 +1,71 @@
 // Type declarations for Strudel packages
-// These packages are written in JavaScript without type definitions
 
-declare module '@strudel/core' {
-  export const Pattern: any;
-  export const silence: any;
-  export const stack: any;
-  export const cat: any;
-  export const sequence: any;
-  export const note: any;
-  export const s: any;
-  export const sound: any;
-  export const register: any;
-  // Add more exports as needed
-  export * from '@strudel/core';
+declare module '@strudel/transpiler' {
+  export function transpiler(code: string, options?: {
+    wrapAsync?: boolean;
+    addReturn?: boolean;
+    emitMiniLocations?: boolean;
+    emitWidgets?: boolean;
+  }): {
+    output: string;
+    miniLocations?: number[][];
+    widgets?: unknown[];
+  };
 }
 
 declare module '@strudel/core/repl.mjs' {
-  export interface ReplOptions {
-    defaultOutput?: (hap: any, deadline: number, duration: number, cps: number, t: number) => Promise<void>;
-    onEvalError?: (err: Error) => void;
-    beforeEval?: (opts: { code: string }) => void;
-    beforeStart?: () => Promise<void>;
-    afterEval?: (opts: { code: string; pattern: any; meta: any }) => void;
+  export function repl(options: {
+    defaultOutput?: unknown;
     getTime?: () => number;
-    transpiler?: (code: string, opts: any) => { output: string };
-    onToggle?: (started: boolean) => void;
-    editPattern?: (pattern: any) => any;
-    onUpdateState?: (state: any) => void;
-    sync?: boolean;
-    setInterval?: typeof setInterval;
-    clearInterval?: typeof clearInterval;
-    id?: string;
-    mondo?: boolean;
-  }
-
-  export interface ReplInstance {
-    scheduler: any;
-    evaluate: (code: string, autostart?: boolean, shouldHush?: boolean) => Promise<any>;
+    transpiler?: unknown;
+    beforeStart?: () => Promise<void>;
+    onEvalError?: (error: Error) => void;
+    afterEval?: () => void;
+  }): {
+    evaluate: (code: string, autostart?: boolean) => Promise<unknown>;
     start: () => void;
     stop: () => void;
     pause: () => void;
-    setCps: (cps: number) => void;
-    setPattern: (pattern: any, autostart?: boolean) => Promise<any>;
-    setCode: (code: string) => void;
     toggle: () => void;
-    state: any;
-  }
-
-  export function repl(options: ReplOptions): ReplInstance;
-  export function getTrigger(options: { getTime: () => number; defaultOutput: any }): any;
+    setCps: (cps: number) => void;
+  };
 }
 
 declare module '@strudel/core/evaluate.mjs' {
-  export const strudelScope: Record<string, any>;
-  export function evalScope(...modules: any[]): Promise<any[]>;
-  export function evaluate(code: string, transpiler?: any, transpilerOptions?: any): Promise<{ mode: string; pattern: any; meta: any }>;
+  export function evalScope(...modules: unknown[]): Promise<unknown[]>;
+  export function evaluate(code: string, transpiler?: unknown, options?: unknown): Promise<{
+    pattern: unknown;
+    meta: unknown;
+  }>;
+}
+
+declare module '@strudel/core' {
+  export const Pattern: unknown;
+  export const stack: (...patterns: unknown[]) => unknown;
+  export const sequence: (...patterns: unknown[]) => unknown;
+  export const cat: (...patterns: unknown[]) => unknown;
+  export const silence: unknown;
+  export const note: (pattern: string | unknown) => unknown;
+  export const s: (pattern: string | unknown) => unknown;
+  // Add other core functions as needed
 }
 
 declare module '@strudel/mini' {
-  export * from '@strudel/mini';
+  export const mini: (code: string) => unknown;
+  export const getLeafLocations: (code: string, offset: number, input: string) => number[][];
+  // Add other mini functions as needed
 }
 
 declare module '@strudel/webaudio' {
   export function initAudio(): Promise<void>;
   export function getAudioContext(): AudioContext;
-  export function webaudioOutput(hap: any, deadline: number, duration: number, cps: number, t: number): Promise<void>;
-  export function samples(sampleMap: string | Record<string, any>, baseUrl?: string, options?: { prebake?: boolean; tag?: string }): Promise<void>;
-  export * from '@strudel/webaudio';
-}
-
-declare module 'superdough' {
-  export function samples(sampleMap: string | Record<string, any>, baseUrl?: string, options?: { prebake?: boolean; tag?: string }): Promise<void>;
-  export function registerSound(key: string, onTrigger: any, data?: Record<string, any>): void;
-  export * from 'superdough';
+  export function webaudioOutput(hap: unknown, deadline: number, duration: number): void;
+  export function samples(url: string): Promise<void>;
+  export function setDestination(destination: AudioNode): void;
 }
 
 declare module '@strudel/tonal' {
-  export * from '@strudel/tonal';
+  export const scale: (name: string) => unknown;
+  export const chord: (name: string) => unknown;
+  // Add other tonal functions as needed
 }
