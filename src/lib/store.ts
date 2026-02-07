@@ -40,6 +40,7 @@ export const useStudioStore = create<StudioState>((set) => ({
   isLoading: false,
   currentCode: `// Welcome to Strudel Studio!
 // Start chatting to generate music...
+// Click Play or press Cmd+Enter to hear the beat
 
 stack(
   s("bd*4"),

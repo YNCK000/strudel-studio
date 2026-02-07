@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useStudioStore, extractCode, type Message } from '@/lib/store';
-import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle, Clock } from 'lucide-react';
+import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle, Clock, Trash2 } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
 
@@ -158,7 +158,7 @@ export function ChatPanel() {
   const [mode, setMode] = useState<Mode>('agent');
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const { messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode } = useStudioStore();
+  const { messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode, clearMessages } = useStudioStore();
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -304,8 +304,20 @@ export function ChatPanel() {
             💬 Chat
           </h2>
           
-          {/* Mode Toggle */}
-          <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
+          <div className="flex items-center gap-2">
+            {/* Clear Button */}
+            {messages.length > 0 && (
+              <button
+                onClick={clearMessages}
+                className="text-zinc-500 hover:text-zinc-300 p-1 rounded hover:bg-zinc-800/60 transition-colors"
+                title="Clear chat"
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            )}
+            
+            {/* Mode Toggle */}
+            <div className="flex items-center gap-1 bg-zinc-900 rounded-lg p-1">
             <button
               onClick={() => setMode('simple')}
               className={`flex items-center gap-1 px-2 py-1 rounded text-xs transition ${
@@ -330,6 +342,7 @@ export function ChatPanel() {
               <Zap className="w-3 h-3" />
               Agent
             </button>
+            </div>
           </div>
         </div>
         <p className="text-sm text-zinc-400">

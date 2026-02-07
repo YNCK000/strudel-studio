@@ -68,6 +68,17 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
+// Check if response content has validated code
+function checkIfCodeValidated(content: string): boolean {
+  // Extract code from markdown
+  const codeMatch = content.match(/```(?:javascript|js)?\n([\s\S]*?)```/);
+  if (!codeMatch) return false;
+  
+  const code = codeMatch[1].trim();
+  const result = validateStrudelCode(code);
+  return result.valid;
+}
+
 // Truncate genre content to essential parts (max 2500 chars)
 function truncateGenreContent(content: string): string {
   if (content.length <= 2500) return content;
@@ -176,12 +187,14 @@ export async function POST(req: NextRequest) {
           .join('\n');
 
         const elapsed = Date.now() - startTime;
-        console.log(`Generate completed in ${elapsed}ms with ${iterations} iterations`);
+        const validated = checkIfCodeValidated(textContent);
+        console.log(`Generate completed in ${elapsed}ms with ${iterations} iterations (validated: ${validated})`);
 
         return Response.json({ 
           content: textContent,
           iterations,
           timeMs: elapsed,
+          validated,
         });
       }
 

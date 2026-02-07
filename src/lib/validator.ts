@@ -29,8 +29,9 @@ export function validateStrudelCode(code: string): ValidationResult {
   }
 
   // 2. Check for required elements
-  if (!code.includes('setcps(')) {
-    errors.push('Missing setcps() - tempo must be set. Example: setcps(130/4/60) for 130 BPM');
+  // Accept both setcps() and .tempo() for BPM setting
+  if (!code.includes('setcps(') && !code.includes('.tempo(')) {
+    errors.push('Missing tempo - set BPM using setcps(130/4/60) or .tempo(130)');
   }
 
   // Check for playable expression (stack, arrange, or pattern at top level)
