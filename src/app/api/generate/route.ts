@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
     // Agent loop with strict limits
     let currentMessages = anthropicMessages;
     let iterations = 0;
-    const maxIterations = 4; // Reduced from 10
+    const maxIterations = 6; // Enough for: generate+validate, retry+validate, genre+generate+validate
 
     while (iterations < maxIterations) {
       // Check timeout
@@ -201,6 +201,8 @@ export async function POST(req: NextRequest) {
         }
 
         // Execute tools
+        console.log(`Iteration ${iterations}: Tool calls:`, toolUseBlocks.map(t => t.name).join(', '));
+        
         const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(
           (toolUse) => ({
             type: 'tool_result' as const,
