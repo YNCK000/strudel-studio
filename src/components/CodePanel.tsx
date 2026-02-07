@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { useStudioStore } from '@/lib/store';
-import { Play, Square, Copy, Check, Volume2, AlertCircle, Loader2, Code2, Keyboard } from 'lucide-react';
+import { Play, Square, Copy, Check, Volume2, VolumeX, AlertCircle, Loader2 } from 'lucide-react';
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
@@ -20,7 +20,7 @@ export function CodePanel() {
   const [initStatus, setInitStatus] = useState<'idle' | 'audio' | 'samples' | 'ready'>('idle');
   const [volumeValue, setVolumeValue] = useState(80);
   
-  const { currentCode, isPlaying, setCurrentCode, setIsPlaying, volume } = useStudioStore();
+  const { currentCode, isPlaying, setCurrentCode, setIsPlaying } = useStudioStore();
 
   // Initialize CodeMirror
   useEffect(() => {
@@ -38,46 +38,37 @@ export function CodePanel() {
           }
         }),
         EditorView.theme({
-          '&': {
-            height: '100%',
-          },
+          '&': { height: '100%' },
           '.cm-scroller': {
             overflow: 'auto',
             fontFamily: "'JetBrains Mono', 'SF Mono', 'Fira Code', monospace",
           },
-          '.cm-content': {
-            padding: '16px 0',
-          },
+          '.cm-content': { padding: '20px 0' },
         }),
       ],
       parent: editorRef.current,
     });
 
     viewRef.current = view;
-
     return () => {
       view.destroy();
       viewRef.current = null;
     };
   }, []);
 
-  // Update editor when code changes externally
+  // Sync external code changes
   useEffect(() => {
     if (viewRef.current) {
       const currentDoc = viewRef.current.state.doc.toString();
       if (currentDoc !== currentCode) {
         viewRef.current.dispatch({
-          changes: {
-            from: 0,
-            to: currentDoc.length,
-            insert: currentCode,
-          },
+          changes: { from: 0, to: currentDoc.length, insert: currentCode },
         });
       }
     }
   }, [currentCode]);
 
-  // Handle keyboard shortcut
+  // Keyboard shortcut
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
@@ -85,7 +76,6 @@ export function CodePanel() {
         handlePlay();
       }
     };
-    
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [currentCode, isPlaying]);
@@ -103,7 +93,6 @@ export function CodePanel() {
       setIsInitializing(true);
       
       if (!strudelRef.current || !isStrudelReady()) {
-        // Poll initialization progress for UI updates
         const progressInterval = setInterval(() => {
           setInitStatus(getInitProgress());
         }, 100);
@@ -136,55 +125,44 @@ export function CodePanel() {
   const lineCount = currentCode.split('\n').length;
 
   return (
-    <div className="flex flex-col h-full bg-zinc-925">
+    <div className="flex flex-col h-full bg-[#0a0a0a]">
       {/* Header */}
-      <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-zinc-800/60 bg-zinc-900/50">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 sm:gap-3">
-            <div className="hidden sm:flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800/80">
-              <Code2 className="w-4 h-4 text-zinc-400" />
-            </div>
-            <div>
-              <h2 className="text-sm font-medium text-white">Code Editor</h2>
-              <p className="text-[10px] sm:text-[11px] text-zinc-500">
-                {lineCount} line{lineCount !== 1 ? 's' : ''} · Strudel pattern
-              </p>
-            </div>
-          </div>
-          
-          <div className="flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="sm"
-              onClick={handleCopy}
-              className="h-8 px-3 text-xs text-zinc-400 hover:text-white hover:bg-zinc-800/80 transition-all duration-150"
-            >
-              {copied ? (
-                <>
-                  <Check className="w-3.5 h-3.5 mr-1.5 text-green-400" />
-                  Copied
-                </>
-              ) : (
-                <>
-                  <Copy className="w-3.5 h-3.5 mr-1.5" />
-                  Copy
-                </>
-              )}
-            </Button>
-          </div>
+      <div className="h-14 px-4 sm:px-5 border-b border-zinc-800/80 flex items-center justify-between">
+        <div className="flex items-center gap-4">
+          <span className="text-sm font-medium text-white">Editor</span>
+          <span className="text-xs text-zinc-600">
+            {lineCount} line{lineCount !== 1 ? 's' : ''}
+          </span>
         </div>
+        
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={handleCopy}
+          className="h-8 px-3 text-xs text-zinc-500 hover:text-white hover:bg-white/5"
+        >
+          {copied ? (
+            <>
+              <Check className="w-3.5 h-3.5 mr-1.5 text-emerald-400" />
+              Copied
+            </>
+          ) : (
+            <>
+              <Copy className="w-3.5 h-3.5 mr-1.5" />
+              Copy
+            </>
+          )}
+        </Button>
       </div>
 
-      {/* Error Banner */}
+      {/* Error */}
       {error && (
-        <div className="px-5 py-3 bg-red-950/50 border-b border-red-900/50 flex items-center gap-3 animate-fade-in">
-          <div className="flex items-center justify-center w-6 h-6 rounded-full bg-red-500/20">
-            <AlertCircle className="w-4 h-4 text-red-400" />
-          </div>
+        <div className="px-5 py-3 bg-red-950/40 border-b border-red-900/30 flex items-center gap-3 animate-fade-in">
+          <AlertCircle className="w-4 h-4 text-red-400 flex-shrink-0" />
           <span className="text-sm text-red-200 flex-1">{error}</span>
           <button 
             onClick={() => setError(null)}
-            className="text-red-400 hover:text-red-300 text-xs font-medium px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
+            className="text-red-400 hover:text-red-300 text-xs px-2 py-1 rounded hover:bg-red-500/10 transition-colors"
           >
             Dismiss
           </button>
@@ -194,79 +172,79 @@ export function CodePanel() {
       {/* Editor */}
       <div ref={editorRef} className="flex-1 overflow-hidden" />
 
-      {/* Playback Controls */}
-      <div className="px-3 sm:px-5 py-3 sm:py-4 border-t border-zinc-800/60 bg-zinc-900/50">
-        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
-          {/* Play/Stop Button */}
-          <Button
-            onClick={handlePlay}
-            disabled={isInitializing}
-            className={`h-10 sm:h-11 px-4 sm:px-6 rounded-xl font-medium text-sm transition-all duration-200 ${
-              isPlaying 
-                ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-500/20' 
-                : 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-500/20'
-            } ${isInitializing ? 'opacity-70' : ''} btn-glow`}
-          >
-            {isInitializing ? (
-              <>
-                <Loader2 className="w-4 h-4 mr-1 sm:mr-2 animate-spin" />
-                <span className="hidden sm:inline">
-                  {initStatus === 'audio' && 'Starting audio...'}
-                  {initStatus === 'samples' && 'Loading samples...'}
-                  {(initStatus === 'idle' || initStatus === 'ready') && 'Starting...'}
-                </span>
-                <span className="sm:hidden">Loading...</span>
-              </>
-            ) : isPlaying ? (
-              <>
-                <Square className="w-4 h-4 mr-1 sm:mr-2 fill-current" />
-                Stop
-              </>
-            ) : (
-              <>
-                <Play className="w-4 h-4 mr-1 sm:mr-2 fill-current" />
-                Play
-              </>
-            )}
-          </Button>
-          
-          {/* Volume Control */}
-          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-xl bg-zinc-800/40 border border-zinc-800/60">
-            <Volume2 className={`w-4 h-4 ${volumeValue > 0 ? 'text-zinc-400' : 'text-zinc-600'}`} />
-            <input
-              type="range"
-              min="0"
-              max="100"
-              value={volumeValue}
-              onChange={(e) => setVolumeValue(Number(e.target.value))}
-              className="w-16 sm:w-20"
-            />
-            <span className="text-xs text-zinc-500 w-8 text-right tabular-nums">{volumeValue}%</span>
-          </div>
-          
-          {/* Keyboard Shortcut Hint - Desktop only */}
-          <div className="hidden lg:flex ml-auto items-center gap-2 text-xs text-zinc-600">
-            <Keyboard className="w-3.5 h-3.5" />
-            <span>
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-zinc-700/50 text-zinc-500 font-mono text-[10px]">⌘</kbd>
-              <span className="mx-0.5">+</span>
-              <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-zinc-700/50 text-zinc-500 font-mono text-[10px]">↵</kbd>
-              <span className="ml-1.5 text-zinc-500">to play</span>
-            </span>
-          </div>
-        </div>
+      {/* Controls */}
+      <div className="h-16 px-4 sm:px-5 border-t border-zinc-800/80 flex items-center gap-4">
+        {/* Play Button */}
+        <Button
+          onClick={handlePlay}
+          disabled={isInitializing}
+          className={`h-10 px-5 rounded-lg font-medium text-sm transition-all ${
+            isPlaying 
+              ? 'bg-white text-black hover:bg-zinc-200' 
+              : 'bg-violet-600 hover:bg-violet-500 text-white'
+          }`}
+        >
+          {isInitializing ? (
+            <>
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+              {initStatus === 'audio' && 'Audio...'}
+              {initStatus === 'samples' && 'Samples...'}
+              {(initStatus === 'idle' || initStatus === 'ready') && 'Starting...'}
+            </>
+          ) : isPlaying ? (
+            <>
+              <Square className="w-4 h-4 mr-2 fill-current" />
+              Stop
+            </>
+          ) : (
+            <>
+              <Play className="w-4 h-4 mr-2 fill-current" />
+              Play
+            </>
+          )}
+        </Button>
         
         {/* Playing indicator */}
         {isPlaying && (
-          <div className="mt-3 flex items-center gap-2 animate-fade-in">
-            <div className="flex items-center gap-1">
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
-              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
-            </div>
-            <span className="text-xs text-green-400/80">Playing</span>
+          <div className="playing-bars">
+            <span /><span /><span /><span />
           </div>
         )}
+        
+        {/* Spacer */}
+        <div className="flex-1" />
+        
+        {/* Volume */}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={() => setVolumeValue(volumeValue > 0 ? 0 : 80)}
+            className="text-zinc-500 hover:text-white transition-colors"
+          >
+            {volumeValue > 0 ? (
+              <Volume2 className="w-4 h-4" />
+            ) : (
+              <VolumeX className="w-4 h-4" />
+            )}
+          </button>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            value={volumeValue}
+            onChange={(e) => setVolumeValue(Number(e.target.value))}
+            className="w-20"
+          />
+          <span className="text-xs text-zinc-600 w-8 text-right tabular-nums">
+            {volumeValue}%
+          </span>
+        </div>
+        
+        {/* Shortcut hint - desktop */}
+        <div className="hidden lg:flex items-center gap-1.5 text-xs text-zinc-600 ml-4">
+          <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-500 font-mono text-[10px]">⌘</kbd>
+          <span>+</span>
+          <kbd className="px-1.5 py-0.5 rounded bg-zinc-900 border border-zinc-800 text-zinc-500 font-mono text-[10px]">↵</kbd>
+        </div>
       </div>
     </div>
   );
