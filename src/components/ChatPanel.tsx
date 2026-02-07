@@ -9,9 +9,60 @@ import { Send, Loader2, RefreshCw, Zap, MessageSquare } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
 
+// Loading messages that cycle during agent processing
+const LOADING_MESSAGES = [
+  'Understanding your request...',
+  'Generating Strudel code...',
+  'Validating syntax...',
+  'Applying finishing touches...',
+];
+
+function LoadingIndicator({ mode }: { mode: Mode }) {
+  const [messageIndex, setMessageIndex] = useState(0);
+  const [dots, setDots] = useState('');
+
+  useEffect(() => {
+    // Cycle through loading messages
+    const messageInterval = setInterval(() => {
+      setMessageIndex((i) => (i + 1) % LOADING_MESSAGES.length);
+    }, 3000);
+
+    // Animate dots
+    const dotsInterval = setInterval(() => {
+      setDots((d) => (d.length >= 3 ? '' : d + '.'));
+    }, 500);
+
+    return () => {
+      clearInterval(messageInterval);
+      clearInterval(dotsInterval);
+    };
+  }, []);
+
+  if (mode !== 'agent') {
+    return (
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin" />
+        <span className="text-sm text-zinc-400">Generating{dots}</span>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-1">
+      <div className="flex items-center gap-2">
+        <Loader2 className="w-4 h-4 animate-spin text-purple-400" />
+        <span className="text-sm text-purple-300">{LOADING_MESSAGES[messageIndex]}{dots}</span>
+      </div>
+      <div className="text-xs text-zinc-500 ml-6">
+        Agent pipeline active
+      </div>
+    </div>
+  );
+}
+
 export function ChatPanel() {
   const [input, setInput] = useState('');
-  const [mode, setMode] = useState<Mode>('agent'); // Default to agent pipeline
+  const [mode, setMode] = useState<Mode>('agent');
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
   const { messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode } = useStudioStore();
@@ -38,6 +89,10 @@ export function ChatPanel() {
     try {
       const endpoint = mode === 'agent' ? '/api/generate' : '/api/chat';
       
+      // Add timeout for fetch
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), 30000);
+      
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -47,7 +102,10 @@ export function ChatPanel() {
             content: m.content
           }))
         }),
+        signal: controller.signal,
       });
+
+      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
@@ -56,6 +114,11 @@ export function ChatPanel() {
         if (contentType?.includes('application/json')) {
           const errorJson = await response.json().catch(() => ({}));
           errorMessage = errorJson.error || `API error (${response.status})`;
+          
+          // Handle timeout specifically
+          if (errorJson.timeout) {
+            errorMessage = '⏱️ Generation timed out. Try a simpler request like "make a simple house beat".';
+          }
         } else {
           errorMessage = await response.text().catch(() => 'Unknown error');
         }
@@ -73,6 +136,11 @@ export function ChatPanel() {
         const code = extractCode(content);
         if (code) {
           setCurrentCode(code);
+        }
+        
+        // Log performance
+        if (data.timeMs) {
+          console.log(`Generated in ${data.timeMs}ms (${data.iterations} iterations)`);
         }
       } else {
         // Simple mode streams text
@@ -99,8 +167,17 @@ export function ChatPanel() {
       setRetryMessage(null);
     } catch (error) {
       console.error('Chat error:', error);
-      const errorMsg = error instanceof Error ? error.message : 'Something went wrong';
-      updateLastMessage(`⚠️ Error: ${errorMsg}\n\nClick the retry button to try again.`);
+      
+      let errorMsg = 'Something went wrong';
+      if (error instanceof Error) {
+        if (error.name === 'AbortError') {
+          errorMsg = '⏱️ Request timed out. Try a simpler request.';
+        } else {
+          errorMsg = error.message;
+        }
+      }
+      
+      updateLastMessage(`⚠️ ${errorMsg}\n\nClick retry to try again, or simplify your request.`);
     } finally {
       setIsLoading(false);
     }
@@ -149,7 +226,7 @@ export function ChatPanel() {
                   ? 'bg-purple-600 text-white' 
                   : 'text-zinc-400 hover:text-zinc-200'
               }`}
-              title="Agent mode: Uses skill docs + validation"
+              title="Agent mode: Validates code automatically"
             >
               <Zap className="w-3 h-3" />
               Agent
@@ -158,7 +235,7 @@ export function ChatPanel() {
         </div>
         <p className="text-sm text-zinc-400">
           {mode === 'agent' 
-            ? 'Agent pipeline: reads skills, validates code' 
+            ? 'Agent validates code automatically (~10-20s)' 
             : 'Simple mode: direct AI response'}
         </p>
       </div>
@@ -173,12 +250,12 @@ export function ChatPanel() {
               <div className="text-xs text-zinc-600 space-y-1">
                 <p>• &quot;Create a chill lo-fi track&quot;</p>
                 <p>• &quot;Give me some drum and bass&quot;</p>
-                <p>• &quot;Make a dubstep drop with wobble bass&quot;</p>
+                <p>• &quot;Make a dubstep drop&quot;</p>
               </div>
               {mode === 'agent' && (
                 <div className="mt-4 text-xs text-purple-400/70 bg-purple-900/20 rounded p-2">
                   <Zap className="w-3 h-3 inline mr-1" />
-                  Agent mode: Reads skill docs, validates code, auto-retries on errors
+                  Agent mode: Validates code, typically 10-20 seconds
                 </div>
               )}
             </div>
@@ -198,18 +275,13 @@ export function ChatPanel() {
               >
                 <div className="whitespace-pre-wrap text-sm">
                   {message.content || (
-                    <div className="flex items-center gap-2">
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                      {mode === 'agent' && (
-                        <span className="text-xs text-zinc-400">Running agent pipeline...</span>
-                      )}
-                    </div>
+                    isLoading && <LoadingIndicator mode={mode} />
                   )}
                 </div>
                 
                 {/* Retry button for failed messages */}
                 {message.role === 'assistant' && 
-                 message.content.includes('⚠️ Error') && 
+                 message.content.includes('⚠️') && 
                  retryMessage && 
                  !isLoading && (
                   <Button
@@ -235,7 +307,7 @@ export function ChatPanel() {
             value={input}
             onChange={(e) => setInput(e.target.value)}
             placeholder={mode === 'agent' 
-              ? "Describe your track (agent will read skills & validate)..." 
+              ? "Describe your track..." 
               : "Describe your track..."}
             className="min-h-[60px] max-h-[120px] bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 resize-none"
             onKeyDown={(e) => {

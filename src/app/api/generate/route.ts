@@ -1,65 +1,46 @@
 /**
  * Agent Pipeline API Route
- * Uses Anthropic's toolRunner for multi-turn agent workflow
+ * Optimized for speed - uses condensed skills and limited iterations
  */
 
 import { NextRequest } from 'next/server';
 import Anthropic from '@anthropic-ai/sdk';
-import { z } from 'zod';
-import { BUNDLED_SKILL, BUNDLED_GENRES, AVAILABLE_GENRES } from '@/lib/bundled-skills';
+import { BUNDLED_GENRES, AVAILABLE_GENRES } from '@/lib/bundled-skills';
+import { CONDENSED_SKILL, CONDENSED_ANTIPATTERNS } from '@/lib/condensed-skill';
 import { validateStrudelCode, formatValidationResult } from '@/lib/validator';
 
 const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// System prompt for the agent
-const SYSTEM_PROMPT = `You are a professional electronic music producer using Strudel (live-coding music environment).
+// Timeout for the entire request (25 seconds to be safe under Vercel's 30s limit)
+const REQUEST_TIMEOUT_MS = 25000;
+
+// System prompt with condensed skill embedded - no need to read it
+const SYSTEM_PROMPT = `You are a professional electronic music producer using Strudel.
+
+${CONDENSED_SKILL}
+
+${CONDENSED_ANTIPATTERNS}
 
 ## Your Workflow
-
-1. **Read the skill documentation** - Call read_skill() to get production standards and syntax reference
-2. **Read genre DNA** - If the user mentions a genre, call read_genre() to get genre-specific patterns
-3. **Generate code** - Create complete, playable Strudel code
-4. **Validate** - ALWAYS call validate_code() before returning your code
-5. **Fix if needed** - If validation fails, fix the errors and validate again
-
-## Important Rules
-
-- ALWAYS call validate_code() before returning code to the user
-- If validation fails, fix the issues and validate again (max 3 attempts)
-- Follow the anti-patterns guidance - avoid static drums, broken buildups, looping same chords
-- Each track should have: drum fills, evolving progressions, unique drops
-- Code MUST start with setcps(BPM/4/60) and end with a playable expression (stack or pattern)
+1. If user mentions a genre, call read_genre() for specific patterns
+2. Generate complete, playable Strudel code
+3. ALWAYS call validate_code() before returning
+4. If validation fails, fix and validate again (max 2 retries)
 
 ## Response Format
+After validation passes:
+1. Brief description (genre, BPM, key, notable features) - 1-2 sentences
+2. Complete Strudel code in a \`\`\`javascript block
 
-After validation passes, respond with:
-1. Brief description (genre, BPM, key, notable features)
-2. The complete Strudel code in a \`\`\`javascript code block
+Keep it concise. Code must be complete and immediately playable.`;
 
-Keep descriptions concise. Code must be complete and immediately playable.`;
-
-// Tool definitions using Zod schemas
+// Streamlined tool definitions
 const tools: Anthropic.Tool[] = [
   {
-    name: 'read_skill',
-    description: 'Read Strudel skill documentation including syntax reference, production standards, and anti-patterns. Call this first to understand how to write good Strudel code.',
-    input_schema: {
-      type: 'object' as const,
-      properties: {
-        section: {
-          type: 'string',
-          enum: ['core', 'patterns', 'theory', 'effects', 'antiPatterns', 'all'],
-          description: 'Which section to read. Use "all" for core + anti-patterns (recommended for first call)',
-        },
-      },
-      required: [],
-    },
-  },
-  {
     name: 'read_genre',
-    description: 'Read genre-specific production DNA including typical BPM, key, drum patterns, bass sounds, and arrangement tips.',
+    description: 'Read genre-specific production DNA (BPM, patterns, sounds). Call if user mentions a specific genre.',
     input_schema: {
       type: 'object' as const,
       properties: {
@@ -73,13 +54,13 @@ const tools: Anthropic.Tool[] = [
   },
   {
     name: 'validate_code',
-    description: 'Validate Strudel code syntax and structure. MUST be called before returning code to user. Returns errors if invalid - fix them and validate again.',
+    description: 'Validate Strudel code. MUST call before returning code to user.',
     input_schema: {
       type: 'object' as const,
       properties: {
         code: {
           type: 'string',
-          description: 'The complete Strudel JavaScript code to validate',
+          description: 'Complete Strudel JavaScript code to validate',
         },
       },
       required: ['code'],
@@ -87,28 +68,41 @@ const tools: Anthropic.Tool[] = [
   },
 ];
 
+// Truncate genre content to essential parts (max 2500 chars)
+function truncateGenreContent(content: string): string {
+  if (content.length <= 2500) return content;
+  
+  // Keep the header and drums/bass sections which are most important
+  const lines = content.split('\n');
+  let result = '';
+  let inImportantSection = true;
+  
+  for (const line of lines) {
+    // Stop at FX Profile or Structure to keep it short
+    if (line.includes('## FX Profile') || line.includes('## Structure')) {
+      result += '\n(See full genre file for FX/structure details)';
+      break;
+    }
+    result += line + '\n';
+    if (result.length > 2500) {
+      result = result.substring(0, 2500) + '\n...';
+      break;
+    }
+  }
+  
+  return result;
+}
+
 // Tool execution
 function executeTool(name: string, input: Record<string, unknown>): string {
   switch (name) {
-    case 'read_skill': {
-      const section = (input.section as string) || 'all';
-      if (section === 'all') {
-        return `# Strudel Skill Documentation\n\n${BUNDLED_SKILL.core}\n\n---\n\n# Anti-Patterns (What NOT to Do)\n\n${BUNDLED_SKILL.antiPatterns}`;
-      }
-      const content = BUNDLED_SKILL[section];
-      if (!content) {
-        return `Unknown section "${section}". Available: core, patterns, theory, effects, antiPatterns, all`;
-      }
-      return content;
-    }
-    
     case 'read_genre': {
       const genre = ((input.genre as string) || '').toLowerCase().replace(/[^a-z]/g, '');
       const content = BUNDLED_GENRES[genre];
       if (!content) {
-        return `Unknown genre "${genre}". Available genres: ${AVAILABLE_GENRES.join(', ')}`;
+        return `Unknown genre "${genre}". Available: ${AVAILABLE_GENRES.join(', ')}. Proceed with general electronic music style.`;
       }
-      return content;
+      return truncateGenreContent(content);
     }
     
     case 'validate_code': {
@@ -126,8 +120,9 @@ function executeTool(name: string, input: Record<string, unknown>): string {
 }
 
 export async function POST(req: NextRequest) {
+  const startTime = Date.now();
+  
   try {
-    // Check for API key
     if (!process.env.ANTHROPIC_API_KEY) {
       return Response.json(
         { error: 'ANTHROPIC_API_KEY not configured' },
@@ -145,33 +140,48 @@ export async function POST(req: NextRequest) {
       })
     );
 
-    // Run agent loop with tool calling
+    // Agent loop with strict limits
     let currentMessages = anthropicMessages;
     let iterations = 0;
-    const maxIterations = 10; // Safety limit
+    const maxIterations = 4; // Reduced from 10
 
     while (iterations < maxIterations) {
+      // Check timeout
+      if (Date.now() - startTime > REQUEST_TIMEOUT_MS) {
+        console.warn('Request timeout approaching');
+        return Response.json(
+          { 
+            error: 'Generation taking too long. Try a simpler request.',
+            timeout: true 
+          },
+          { status: 504 }
+        );
+      }
+
       iterations++;
 
       const response = await anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
-        max_tokens: 8000,
+        max_tokens: 4000, // Reduced from 8000
         system: SYSTEM_PROMPT,
         messages: currentMessages,
         tools,
       });
 
-      // Check if we're done (no more tool calls)
+      // Check if we're done
       if (response.stop_reason === 'end_turn') {
-        // Extract text content
         const textContent = response.content
           .filter((block): block is Anthropic.TextBlock => block.type === 'text')
           .map((block) => block.text)
           .join('\n');
 
+        const elapsed = Date.now() - startTime;
+        console.log(`Generate completed in ${elapsed}ms with ${iterations} iterations`);
+
         return Response.json({ 
           content: textContent,
           iterations,
+          timeMs: elapsed,
         });
       }
 
@@ -182,7 +192,6 @@ export async function POST(req: NextRequest) {
         );
 
         if (toolUseBlocks.length === 0) {
-          // No tool calls, return what we have
           const textContent = response.content
             .filter((block): block is Anthropic.TextBlock => block.type === 'text')
             .map((block) => block.text)
@@ -191,7 +200,7 @@ export async function POST(req: NextRequest) {
           return Response.json({ content: textContent, iterations });
         }
 
-        // Execute tools and build response
+        // Execute tools
         const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(
           (toolUse) => ({
             type: 'tool_result' as const,
@@ -200,14 +209,14 @@ export async function POST(req: NextRequest) {
           })
         );
 
-        // Add assistant response and tool results to messages
+        // Add to conversation
         currentMessages = [
           ...currentMessages,
           { role: 'assistant' as const, content: response.content },
           { role: 'user' as const, content: toolResults },
         ];
       } else {
-        // Unexpected stop reason
+        // Unexpected stop reason - return what we have
         console.warn('Unexpected stop reason:', response.stop_reason);
         const textContent = response.content
           .filter((block): block is Anthropic.TextBlock => block.type === 'text')
@@ -220,7 +229,7 @@ export async function POST(req: NextRequest) {
 
     // Max iterations reached
     return Response.json(
-      { error: 'Max iterations reached', iterations },
+      { error: 'Generation taking too many steps. Try a simpler request.', iterations },
       { status: 500 }
     );
 
@@ -235,7 +244,7 @@ export async function POST(req: NextRequest) {
     }
     
     return Response.json(
-      { error: 'Failed to generate' },
+      { error: 'Failed to generate. Please try again.' },
       { status: 500 }
     );
   }
