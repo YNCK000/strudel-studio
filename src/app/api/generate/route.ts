@@ -1,6 +1,7 @@
 /**
- * Agent Pipeline API Route
- * Optimized for speed - uses condensed skills and limited iterations
+ * Agent Pipeline API Route - Streaming Version
+ * Uses Server-Sent Events to avoid timeouts
+ * Runs agentic loop until completion with progress updates
  */
 
 import { NextRequest } from 'next/server';
@@ -13,10 +14,7 @@ const anthropic = new Anthropic({
   apiKey: process.env.ANTHROPIC_API_KEY,
 });
 
-// Timeout for the entire request (25 seconds to be safe under Vercel's 30s limit)
-const REQUEST_TIMEOUT_MS = 25000;
-
-// System prompt with condensed skill embedded - no need to read it
+// System prompt with condensed skill embedded
 const SYSTEM_PROMPT = `You are a professional electronic music producer using Strudel.
 
 ${CONDENSED_SKILL}
@@ -36,7 +34,7 @@ After validation passes:
 
 Keep it concise. Code must be complete and immediately playable.`;
 
-// Streamlined tool definitions
+// Tool definitions
 const tools: Anthropic.Tool[] = [
   {
     name: 'read_genre',
@@ -70,7 +68,6 @@ const tools: Anthropic.Tool[] = [
 
 // Check if response content has validated code
 function checkIfCodeValidated(content: string): boolean {
-  // Extract code from markdown
   const codeMatch = content.match(/```(?:javascript|js)?\n([\s\S]*?)```/);
   if (!codeMatch) return false;
   
@@ -79,17 +76,14 @@ function checkIfCodeValidated(content: string): boolean {
   return result.valid;
 }
 
-// Truncate genre content to essential parts (max 2500 chars)
+// Truncate genre content to essential parts
 function truncateGenreContent(content: string): string {
   if (content.length <= 2500) return content;
   
-  // Keep the header and drums/bass sections which are most important
   const lines = content.split('\n');
   let result = '';
-  let inImportantSection = true;
   
   for (const line of lines) {
-    // Stop at FX Profile or Structure to keep it short
     if (line.includes('## FX Profile') || line.includes('## Structure')) {
       result += '\n(See full genre file for FX/structure details)';
       break;
@@ -130,137 +124,186 @@ function executeTool(name: string, input: Record<string, unknown>): string {
   }
 }
 
+// SSE helper to send events
+function sendSSE(controller: ReadableStreamDefaultController, event: string, data: unknown) {
+  const payload = `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+  controller.enqueue(new TextEncoder().encode(payload));
+}
+
 export async function POST(req: NextRequest) {
   const startTime = Date.now();
   
-  try {
-    if (!process.env.ANTHROPIC_API_KEY) {
-      return Response.json(
-        { error: 'ANTHROPIC_API_KEY not configured' },
-        { status: 500 }
-      );
-    }
-
-    const { messages } = await req.json();
-
-    // Convert messages to Anthropic format
-    const anthropicMessages: Anthropic.MessageParam[] = messages.map(
-      (m: { role: string; content: string }) => ({
-        role: m.role as 'user' | 'assistant',
-        content: m.content,
-      })
-    );
-
-    // Agent loop with strict limits
-    let currentMessages = anthropicMessages;
-    let iterations = 0;
-    const maxIterations = 6; // Enough for: generate+validate, retry+validate, genre+generate+validate
-
-    while (iterations < maxIterations) {
-      // Check timeout
-      if (Date.now() - startTime > REQUEST_TIMEOUT_MS) {
-        console.warn('Request timeout approaching');
-        return Response.json(
-          { 
-            error: 'Generation taking too long. Try a simpler request.',
-            timeout: true 
-          },
-          { status: 504 }
-        );
-      }
-
-      iterations++;
-
-      const response = await anthropic.messages.create({
-        model: 'claude-sonnet-4-20250514',
-        max_tokens: 4000, // Reduced from 8000
-        system: SYSTEM_PROMPT,
-        messages: currentMessages,
-        tools,
-      });
-
-      // Check if we're done
-      if (response.stop_reason === 'end_turn') {
-        const textContent = response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join('\n');
-
-        const elapsed = Date.now() - startTime;
-        const validated = checkIfCodeValidated(textContent);
-        console.log(`Generate completed in ${elapsed}ms with ${iterations} iterations (validated: ${validated})`);
-
-        return Response.json({ 
-          content: textContent,
-          iterations,
-          timeMs: elapsed,
-          validated,
-        });
-      }
-
-      // Handle tool calls
-      if (response.stop_reason === 'tool_use') {
-        const toolUseBlocks = response.content.filter(
-          (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
-        );
-
-        if (toolUseBlocks.length === 0) {
-          const textContent = response.content
-            .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-            .map((block) => block.text)
-            .join('\n');
-          
-          return Response.json({ content: textContent, iterations });
-        }
-
-        // Execute tools
-        console.log(`Iteration ${iterations}: Tool calls:`, toolUseBlocks.map(t => t.name).join(', '));
-        
-        const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(
-          (toolUse) => ({
-            type: 'tool_result' as const,
-            tool_use_id: toolUse.id,
-            content: executeTool(toolUse.name, toolUse.input as Record<string, unknown>),
-          })
-        );
-
-        // Add to conversation
-        currentMessages = [
-          ...currentMessages,
-          { role: 'assistant' as const, content: response.content },
-          { role: 'user' as const, content: toolResults },
-        ];
-      } else {
-        // Unexpected stop reason - return what we have
-        console.warn('Unexpected stop reason:', response.stop_reason);
-        const textContent = response.content
-          .filter((block): block is Anthropic.TextBlock => block.type === 'text')
-          .map((block) => block.text)
-          .join('\n');
-        
-        return Response.json({ content: textContent, iterations });
-      }
-    }
-
-    // Max iterations reached
+  if (!process.env.ANTHROPIC_API_KEY) {
     return Response.json(
-      { error: 'Generation taking too many steps. Try a simpler request.', iterations },
-      { status: 500 }
-    );
-
-  } catch (error: unknown) {
-    console.error('Generate API error:', error);
-    
-    if (error instanceof Anthropic.APIError) {
-      return Response.json(
-        { error: error.message },
-        { status: error.status || 500 }
-      );
-    }
-    
-    return Response.json(
-      { error: 'Failed to generate. Please try again.' },
+      { error: 'ANTHROPIC_API_KEY not configured' },
       { status: 500 }
     );
   }
+
+  let requestBody: { messages: Array<{ role: string; content: string }> };
+  try {
+    requestBody = await req.json();
+  } catch {
+    return Response.json({ error: 'Invalid request body' }, { status: 400 });
+  }
+
+  const { messages } = requestBody;
+
+  // Create a streaming response using SSE
+  const stream = new ReadableStream({
+    async start(controller) {
+      try {
+        // Convert messages to Anthropic format
+        const anthropicMessages: Anthropic.MessageParam[] = messages.map(
+          (m: { role: string; content: string }) => ({
+            role: m.role as 'user' | 'assistant',
+            content: m.content,
+          })
+        );
+
+        let currentMessages = anthropicMessages;
+        let iterations = 0;
+        const maxIterations = 10; // More generous limit since we're streaming
+
+        // Send initial status
+        sendSSE(controller, 'status', { 
+          status: 'started', 
+          message: 'Understanding your request...' 
+        });
+
+        while (iterations < maxIterations) {
+          iterations++;
+
+          // Send progress update
+          sendSSE(controller, 'progress', { 
+            iteration: iterations, 
+            message: iterations === 1 ? 'Generating track...' : `Iteration ${iterations}...` 
+          });
+
+          const response = await anthropic.messages.create({
+            model: 'claude-sonnet-4-20250514',
+            max_tokens: 4000,
+            system: SYSTEM_PROMPT,
+            messages: currentMessages,
+            tools,
+          });
+
+          // Check if we're done
+          if (response.stop_reason === 'end_turn') {
+            const textContent = response.content
+              .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+              .map((block) => block.text)
+              .join('\n');
+
+            const elapsed = Date.now() - startTime;
+            const validated = checkIfCodeValidated(textContent);
+            
+            console.log(`Generate completed in ${elapsed}ms with ${iterations} iterations (validated: ${validated})`);
+
+            // Send final result
+            sendSSE(controller, 'complete', { 
+              content: textContent,
+              iterations,
+              timeMs: elapsed,
+              validated,
+            });
+            
+            controller.close();
+            return;
+          }
+
+          // Handle tool calls
+          if (response.stop_reason === 'tool_use') {
+            const toolUseBlocks = response.content.filter(
+              (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+            );
+
+            if (toolUseBlocks.length === 0) {
+              // No tool calls but stop reason was tool_use - return text
+              const textContent = response.content
+                .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+                .map((block) => block.text)
+                .join('\n');
+              
+              sendSSE(controller, 'complete', { 
+                content: textContent, 
+                iterations,
+                timeMs: Date.now() - startTime,
+              });
+              controller.close();
+              return;
+            }
+
+            // Send tool call status
+            const toolNames = toolUseBlocks.map(t => t.name);
+            console.log(`Iteration ${iterations}: Tool calls:`, toolNames.join(', '));
+            
+            sendSSE(controller, 'tools', { 
+              tools: toolNames,
+              message: toolNames.includes('validate_code') ? 'Validating code...' : 
+                       toolNames.includes('read_genre') ? 'Loading genre patterns...' : 
+                       'Processing...'
+            });
+
+            // Execute tools
+            const toolResults: Anthropic.ToolResultBlockParam[] = toolUseBlocks.map(
+              (toolUse) => ({
+                type: 'tool_result' as const,
+                tool_use_id: toolUse.id,
+                content: executeTool(toolUse.name, toolUse.input as Record<string, unknown>),
+              })
+            );
+
+            // Add to conversation
+            currentMessages = [
+              ...currentMessages,
+              { role: 'assistant' as const, content: response.content },
+              { role: 'user' as const, content: toolResults },
+            ];
+          } else {
+            // Unexpected stop reason - return what we have
+            console.warn('Unexpected stop reason:', response.stop_reason);
+            const textContent = response.content
+              .filter((block): block is Anthropic.TextBlock => block.type === 'text')
+              .map((block) => block.text)
+              .join('\n');
+            
+            sendSSE(controller, 'complete', { 
+              content: textContent, 
+              iterations,
+              timeMs: Date.now() - startTime,
+            });
+            controller.close();
+            return;
+          }
+        }
+
+        // Max iterations reached
+        sendSSE(controller, 'error', { 
+          error: 'Generation taking too many steps. Try a simpler request.',
+          iterations 
+        });
+        controller.close();
+
+      } catch (error: unknown) {
+        console.error('Generate API error:', error);
+        
+        const errorMessage = error instanceof Anthropic.APIError 
+          ? error.message 
+          : 'Failed to generate. Please try again.';
+        
+        sendSSE(controller, 'error', { error: errorMessage });
+        controller.close();
+      }
+    },
+  });
+
+  // Return SSE response
+  return new Response(stream, {
+    headers: {
+      'Content-Type': 'text/event-stream',
+      'Cache-Control': 'no-cache',
+      'Connection': 'keep-alive',
+    },
+  });
 }

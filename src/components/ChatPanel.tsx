@@ -167,6 +167,32 @@ export function ChatPanel() {
     }
   }, [messages]);
 
+  // Parse SSE event from stream chunk
+  const parseSSE = (chunk: string): Array<{ event: string; data: unknown }> => {
+    const events: Array<{ event: string; data: unknown }> = [];
+    const lines = chunk.split('\n');
+    let currentEvent = '';
+    let currentData = '';
+    
+    for (const line of lines) {
+      if (line.startsWith('event: ')) {
+        currentEvent = line.slice(7);
+      } else if (line.startsWith('data: ')) {
+        currentData = line.slice(6);
+        if (currentEvent && currentData) {
+          try {
+            events.push({ event: currentEvent, data: JSON.parse(currentData) });
+          } catch {
+            console.warn('Failed to parse SSE data:', currentData);
+          }
+          currentEvent = '';
+          currentData = '';
+        }
+      }
+    }
+    return events;
+  };
+
   const sendMessage = useCallback(async (userMessage: string) => {
     if (!userMessage.trim() || isLoading) return;
 
@@ -182,10 +208,6 @@ export function ChatPanel() {
     try {
       const endpoint = mode === 'agent' ? '/api/generate' : '/api/chat';
       
-      // Add timeout for fetch
-      const controller = new AbortController();
-      const timeoutId = setTimeout(() => controller.abort(), 30000);
-      
       const response = await fetch(endpoint, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -195,10 +217,7 @@ export function ChatPanel() {
             content: m.content
           }))
         }),
-        signal: controller.signal,
       });
-
-      clearTimeout(timeoutId);
 
       if (!response.ok) {
         const contentType = response.headers.get('content-type');
@@ -207,11 +226,6 @@ export function ChatPanel() {
         if (contentType?.includes('application/json')) {
           const errorJson = await response.json().catch(() => ({}));
           errorMessage = errorJson.error || `API error (${response.status})`;
-          
-          // Handle timeout specifically
-          if (errorJson.timeout) {
-            errorMessage = '⏱️ Generation timed out. Try a simpler request like "make a simple house beat".';
-          }
         } else {
           errorMessage = await response.text().catch(() => 'Unknown error');
         }
@@ -220,29 +234,60 @@ export function ChatPanel() {
       }
 
       if (mode === 'agent') {
-        // Agent mode returns JSON
-        const data = await response.json();
-        const content = data.content || '';
-        
-        // Update message with metadata
-        updateLastMessage(content, {
-          validated: data.validated ?? true,
-          iterations: data.iterations,
-          timeMs: data.timeMs,
-        });
-        
-        // Extract and update code
-        const code = extractCode(content);
-        if (code) {
-          setCurrentCode(code);
-        }
-        
-        // Log performance
-        if (data.timeMs) {
-          console.log(`Generated in ${data.timeMs}ms (${data.iterations} iterations)`);
+        // Agent mode uses SSE streaming
+        const reader = response.body?.getReader();
+        const decoder = new TextDecoder();
+        let buffer = '';
+
+        while (reader) {
+          const { done, value } = await reader.read();
+          if (done) break;
+          
+          buffer += decoder.decode(value, { stream: true });
+          
+          // Process complete events in buffer
+          const events = parseSSE(buffer);
+          buffer = ''; // Clear processed buffer
+          
+          for (const { event, data } of events) {
+            const eventData = data as Record<string, unknown>;
+            
+            switch (event) {
+              case 'status':
+              case 'progress':
+              case 'tools':
+                // Update loading message with status
+                updateLastMessage(`⏳ ${eventData.message || 'Processing...'}`);
+                break;
+                
+              case 'complete':
+                // Final result
+                const content = (eventData.content as string) || '';
+                updateLastMessage(content, {
+                  validated: eventData.validated as boolean ?? true,
+                  iterations: eventData.iterations as number,
+                  timeMs: eventData.timeMs as number,
+                });
+                
+                // Extract and update code
+                const code = extractCode(content);
+                if (code) {
+                  setCurrentCode(code);
+                }
+                
+                // Log performance
+                if (eventData.timeMs) {
+                  console.log(`Generated in ${eventData.timeMs}ms (${eventData.iterations} iterations)`);
+                }
+                break;
+                
+              case 'error':
+                throw new Error(eventData.error as string || 'Generation failed');
+            }
+          }
         }
       } else {
-        // Simple mode streams text
+        // Simple mode streams text directly
         const reader = response.body?.getReader();
         const decoder = new TextDecoder();
         let fullContent = '';
@@ -269,11 +314,7 @@ export function ChatPanel() {
       
       let errorMsg = 'Something went wrong';
       if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          errorMsg = '⏱️ Request timed out. Try a simpler request.';
-        } else {
-          errorMsg = error.message;
-        }
+        errorMsg = error.message;
       }
       
       updateLastMessage(`⚠️ ${errorMsg}\n\nClick retry to try again, or simplify your request.`);
