@@ -1,5 +1,9 @@
 import { NextRequest } from 'next/server';
-import OpenAI from 'openai';
+import Anthropic from '@anthropic-ai/sdk';
+
+const anthropic = new Anthropic({
+  apiKey: process.env.ANTHROPIC_API_KEY,
+});
 
 const SYSTEM_PROMPT = `You are a professional electronic music producer and Strudel expert. You create live-coded music using the Strudel library (https://strudel.cc).
 
@@ -21,6 +25,9 @@ Professional production tips:
 - Use filter automation: .lpf(saw.range(200, 2000).slow(8))
 - Layer sounds for depth
 - Build energy with arrangement
+- Use drum fills before transitions
+- Evolve chord progressions (don't just loop 4 chords)
+- Make each drop unique
 
 Always respond with:
 1. A brief description of what you created
@@ -29,45 +36,31 @@ Always respond with:
 Keep responses concise but include all the code needed to play the pattern.`;
 
 export async function POST(req: NextRequest) {
-  // Check for API key first
-  const apiKey = process.env.OPENAI_API_KEY;
-  
-  if (!apiKey || apiKey === 'sk-...') {
-    console.error('Chat API error: OPENAI_API_KEY not configured');
-    return new Response(
-      JSON.stringify({ 
-        error: 'API key not configured. Please add OPENAI_API_KEY to .env.local' 
-      }), 
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
-    );
-  }
-
   try {
-    const openai = new OpenAI({ apiKey });
-    const { messages } = await req.json();
-
-    if (!messages || !Array.isArray(messages)) {
+    // Check for API key
+    if (!process.env.ANTHROPIC_API_KEY) {
       return new Response(
-        JSON.stringify({ error: 'Invalid request: messages array required' }),
-        { 
-          status: 400,
-          headers: { 'Content-Type': 'application/json' }
-        }
+        JSON.stringify({ 
+          error: 'API key not configured',
+          message: 'Make sure ANTHROPIC_API_KEY is set in .env.local'
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    const response = await openai.chat.completions.create({
-      model: 'gpt-4-turbo-preview',
-      messages: [
-        { role: 'system', content: SYSTEM_PROMPT },
-        ...messages,
-      ],
-      stream: true,
-      temperature: 0.7,
+    const { messages } = await req.json();
+
+    // Convert messages to Anthropic format
+    const anthropicMessages = messages.map((m: { role: string; content: string }) => ({
+      role: m.role as 'user' | 'assistant',
+      content: m.content,
+    }));
+
+    const response = await anthropic.messages.stream({
+      model: 'claude-sonnet-4-20250514',
       max_tokens: 2000,
+      system: SYSTEM_PROMPT,
+      messages: anthropicMessages,
     });
 
     // Create a streaming response
@@ -75,16 +68,15 @@ export async function POST(req: NextRequest) {
     const stream = new ReadableStream({
       async start(controller) {
         try {
-          for await (const chunk of response) {
-            const content = chunk.choices[0]?.delta?.content || '';
-            if (content) {
-              controller.enqueue(encoder.encode(content));
+          for await (const event of response) {
+            if (event.type === 'content_block_delta' && event.delta.type === 'text_delta') {
+              controller.enqueue(encoder.encode(event.delta.text));
             }
           }
           controller.close();
-        } catch (streamError) {
-          console.error('Stream error:', streamError);
-          controller.error(streamError);
+        } catch (error) {
+          console.error('Stream error:', error);
+          controller.error(error);
         }
       },
     });
@@ -95,32 +87,28 @@ export async function POST(req: NextRequest) {
         'Cache-Control': 'no-cache',
       },
     });
-  } catch (error) {
+  } catch (error: unknown) {
     console.error('Chat API error:', error);
     
-    // Handle specific OpenAI errors
-    if (error instanceof OpenAI.APIError) {
-      const message = error.status === 401 
-        ? 'Invalid API key. Please check your OPENAI_API_KEY.'
-        : error.status === 429
-        ? 'Rate limit exceeded. Please wait and try again.'
-        : `OpenAI API error: ${error.message}`;
-      
-      return new Response(
-        JSON.stringify({ error: message }),
-        { 
-          status: error.status || 500,
-          headers: { 'Content-Type': 'application/json' }
-        }
-      );
+    // Handle Anthropic API errors
+    if (error instanceof Anthropic.APIError) {
+      if (error.status === 401) {
+        return new Response(
+          JSON.stringify({ error: 'Invalid API key' }),
+          { status: 401, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
+      if (error.status === 429) {
+        return new Response(
+          JSON.stringify({ error: 'Rate limited. Please try again.' }),
+          { status: 429, headers: { 'Content-Type': 'application/json' } }
+        );
+      }
     }
     
     return new Response(
-      JSON.stringify({ error: 'Failed to generate response. Please try again.' }),
-      { 
-        status: 500,
-        headers: { 'Content-Type': 'application/json' }
-      }
+      JSON.stringify({ error: 'Failed to generate response' }),
+      { status: 500, headers: { 'Content-Type': 'application/json' } }
     );
   }
 }
