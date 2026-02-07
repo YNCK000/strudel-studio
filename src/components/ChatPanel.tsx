@@ -5,7 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useStudioStore, extractCode } from '@/lib/store';
-import { Send, Loader2, RefreshCw, Zap, MessageSquare } from 'lucide-react';
+import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle, Clock } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
 
@@ -130,7 +130,13 @@ export function ChatPanel() {
         // Agent mode returns JSON
         const data = await response.json();
         const content = data.content || '';
-        updateLastMessage(content);
+        
+        // Update message with metadata
+        updateLastMessage(content, {
+          validated: data.validated ?? true,
+          iterations: data.iterations,
+          timeMs: data.timeMs,
+        });
         
         // Extract and update code
         const code = extractCode(content);
@@ -278,6 +284,29 @@ export function ChatPanel() {
                     isLoading && <LoadingIndicator mode={mode} />
                   )}
                 </div>
+                
+                {/* Generation metadata badge */}
+                {message.role === 'assistant' && 
+                 message.validated !== undefined && 
+                 !message.content.includes('⚠️') && (
+                  <div className="mt-2 flex items-center gap-2 text-xs">
+                    <span className="flex items-center gap-1 text-green-400">
+                      <CheckCircle className="w-3 h-3" />
+                      Validated
+                    </span>
+                    {message.timeMs && (
+                      <span className="flex items-center gap-1 text-zinc-500">
+                        <Clock className="w-3 h-3" />
+                        {(message.timeMs / 1000).toFixed(1)}s
+                      </span>
+                    )}
+                    {message.iterations && message.iterations > 1 && (
+                      <span className="text-zinc-500">
+                        ({message.iterations} iterations)
+                      </span>
+                    )}
+                  </div>
+                )}
                 
                 {/* Retry button for failed messages */}
                 {message.role === 'assistant' && 

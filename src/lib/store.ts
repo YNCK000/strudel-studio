@@ -6,6 +6,10 @@ export interface Message {
   content: string;
   code?: string;
   createdAt: Date;
+  // Generation metadata
+  validated?: boolean;
+  iterations?: number;
+  timeMs?: number;
 }
 
 interface StudioState {
@@ -22,7 +26,7 @@ interface StudioState {
   
   // Actions
   addMessage: (message: Omit<Message, 'id' | 'createdAt'>) => void;
-  updateLastMessage: (content: string) => void;
+  updateLastMessage: (content: string, metadata?: { validated?: boolean; iterations?: number; timeMs?: number }) => void;
   setIsLoading: (loading: boolean) => void;
   setCurrentCode: (code: string) => void;
   setIsPlaying: (playing: boolean) => void;
@@ -58,11 +62,14 @@ stack(
       ],
     })),
     
-  updateLastMessage: (content) =>
+  updateLastMessage: (content, metadata) =>
     set((state) => {
       const messages = [...state.messages];
       if (messages.length > 0) {
         messages[messages.length - 1].content = content;
+        if (metadata) {
+          Object.assign(messages[messages.length - 1], metadata);
+        }
       }
       return { messages };
     }),
