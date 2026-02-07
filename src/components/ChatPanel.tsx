@@ -1,10 +1,10 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { useStudioStore, extractCode } from '@/lib/store';
+import { useStudioStore, extractCode, type Message } from '@/lib/store';
 import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle, Clock } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
@@ -17,7 +17,7 @@ const LOADING_MESSAGES = [
   'Applying finishing touches...',
 ];
 
-function LoadingIndicator({ mode }: { mode: Mode }) {
+const LoadingIndicator = memo(function LoadingIndicator({ mode }: { mode: Mode }) {
   const [messageIndex, setMessageIndex] = useState(0);
   const [dots, setDots] = useState('');
 
@@ -58,7 +58,100 @@ function LoadingIndicator({ mode }: { mode: Mode }) {
       </div>
     </div>
   );
-}
+});
+
+// Memoized message component for better performance with long chat histories
+const ChatMessage = memo(function ChatMessage({ 
+  message, 
+  isLoading, 
+  mode,
+  retryMessage,
+  onRetry 
+}: { 
+  message: Message; 
+  isLoading: boolean;
+  mode: Mode;
+  retryMessage: string | null;
+  onRetry: () => void;
+}) {
+  return (
+    <div className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+      <div
+        className={`max-w-[85%] rounded-lg px-4 py-2 ${
+          message.role === 'user'
+            ? 'bg-purple-600 text-white'
+            : 'bg-zinc-800 text-zinc-100'
+        }`}
+      >
+        <div className="whitespace-pre-wrap text-sm">
+          {message.content || (
+            isLoading && <LoadingIndicator mode={mode} />
+          )}
+        </div>
+        
+        {/* Generation metadata badge */}
+        {message.role === 'assistant' && 
+         message.validated !== undefined && 
+         !message.content.includes('⚠️') && (
+          <div className="mt-2 flex items-center gap-2 text-xs">
+            <span className="flex items-center gap-1 text-green-400">
+              <CheckCircle className="w-3 h-3" />
+              Validated
+            </span>
+            {message.timeMs && (
+              <span className="flex items-center gap-1 text-zinc-500">
+                <Clock className="w-3 h-3" />
+                {(message.timeMs / 1000).toFixed(1)}s
+              </span>
+            )}
+            {message.iterations && message.iterations > 1 && (
+              <span className="text-zinc-500">
+                ({message.iterations} iterations)
+              </span>
+            )}
+          </div>
+        )}
+        
+        {/* Retry button for failed messages */}
+        {message.role === 'assistant' && 
+         message.content.includes('⚠️') && 
+         retryMessage && 
+         !isLoading && (
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onRetry}
+            className="mt-2 border-zinc-600 text-zinc-300 hover:bg-zinc-700"
+          >
+            <RefreshCw className="w-3 h-3 mr-1" />
+            Retry
+          </Button>
+        )}
+      </div>
+    </div>
+  );
+});
+
+// Welcome message component
+const WelcomeMessage = memo(function WelcomeMessage({ mode }: { mode: Mode }) {
+  return (
+    <div className="text-center text-zinc-500 py-8">
+      <p className="text-lg mb-2">🎵 Welcome to Strudel Studio</p>
+      <p className="text-sm mb-4">Try: &quot;Make me a techno beat at 130 BPM&quot;</p>
+      <div className="text-xs text-zinc-600 space-y-1">
+        <p>• &quot;Create a chill lo-fi track&quot;</p>
+        <p>• &quot;Give me some drum and bass&quot;</p>
+        <p>• &quot;Make a dubstep drop&quot;</p>
+      </div>
+      {mode === 'agent' && (
+        <div className="mt-4 text-xs text-purple-400/70 bg-purple-900/20 rounded p-2">
+          <Zap className="w-3 h-3 inline mr-1" />
+          Agent mode: Validates code, typically 10-20 seconds
+        </div>
+      )}
+    </div>
+  );
+});
 
 export function ChatPanel() {
   const [input, setInput] = useState('');
@@ -249,82 +342,17 @@ export function ChatPanel() {
       {/* Messages */}
       <ScrollArea className="flex-1 p-4" ref={scrollRef}>
         <div className="space-y-4">
-          {messages.length === 0 && (
-            <div className="text-center text-zinc-500 py-8">
-              <p className="text-lg mb-2">🎵 Welcome to Strudel Studio</p>
-              <p className="text-sm mb-4">Try: &quot;Make me a techno beat at 130 BPM&quot;</p>
-              <div className="text-xs text-zinc-600 space-y-1">
-                <p>• &quot;Create a chill lo-fi track&quot;</p>
-                <p>• &quot;Give me some drum and bass&quot;</p>
-                <p>• &quot;Make a dubstep drop&quot;</p>
-              </div>
-              {mode === 'agent' && (
-                <div className="mt-4 text-xs text-purple-400/70 bg-purple-900/20 rounded p-2">
-                  <Zap className="w-3 h-3 inline mr-1" />
-                  Agent mode: Validates code, typically 10-20 seconds
-                </div>
-              )}
-            </div>
-          )}
+          {messages.length === 0 && <WelcomeMessage mode={mode} />}
           
           {messages.map((message) => (
-            <div
+            <ChatMessage 
               key={message.id}
-              className={`flex ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[85%] rounded-lg px-4 py-2 ${
-                  message.role === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-zinc-800 text-zinc-100'
-                }`}
-              >
-                <div className="whitespace-pre-wrap text-sm">
-                  {message.content || (
-                    isLoading && <LoadingIndicator mode={mode} />
-                  )}
-                </div>
-                
-                {/* Generation metadata badge */}
-                {message.role === 'assistant' && 
-                 message.validated !== undefined && 
-                 !message.content.includes('⚠️') && (
-                  <div className="mt-2 flex items-center gap-2 text-xs">
-                    <span className="flex items-center gap-1 text-green-400">
-                      <CheckCircle className="w-3 h-3" />
-                      Validated
-                    </span>
-                    {message.timeMs && (
-                      <span className="flex items-center gap-1 text-zinc-500">
-                        <Clock className="w-3 h-3" />
-                        {(message.timeMs / 1000).toFixed(1)}s
-                      </span>
-                    )}
-                    {message.iterations && message.iterations > 1 && (
-                      <span className="text-zinc-500">
-                        ({message.iterations} iterations)
-                      </span>
-                    )}
-                  </div>
-                )}
-                
-                {/* Retry button for failed messages */}
-                {message.role === 'assistant' && 
-                 message.content.includes('⚠️') && 
-                 retryMessage && 
-                 !isLoading && (
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleRetry}
-                    className="mt-2 border-zinc-600 text-zinc-300 hover:bg-zinc-700"
-                  >
-                    <RefreshCw className="w-3 h-3 mr-1" />
-                    Retry
-                  </Button>
-                )}
-              </div>
-            </div>
+              message={message}
+              isLoading={isLoading}
+              mode={mode}
+              retryMessage={retryMessage}
+              onRetry={handleRetry}
+            />
           ))}
         </div>
       </ScrollArea>
