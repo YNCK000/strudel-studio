@@ -7,7 +7,7 @@ import { Play, Square, Copy, Check, Volume2, AlertCircle, Loader2, Code2, Keyboa
 import { EditorView, basicSetup } from 'codemirror';
 import { javascript } from '@codemirror/lang-javascript';
 import { oneDark } from '@codemirror/theme-one-dark';
-import { initStrudel, stopStrudel, isStrudelReady, type StrudelInstance } from '@/lib/strudel';
+import { initStrudel, stopStrudel, isStrudelReady, getInitProgress, type StrudelInstance } from '@/lib/strudel';
 
 export function CodePanel() {
   const editorRef = useRef<HTMLDivElement>(null);
@@ -17,6 +17,7 @@ export function CodePanel() {
   const [copied, setCopied] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(false);
+  const [initStatus, setInitStatus] = useState<'idle' | 'audio' | 'samples' | 'ready'>('idle');
   const [volumeValue, setVolumeValue] = useState(80);
   
   const { currentCode, isPlaying, setCurrentCode, setIsPlaying, volume } = useStudioStore();
@@ -102,7 +103,17 @@ export function CodePanel() {
       setIsInitializing(true);
       
       if (!strudelRef.current || !isStrudelReady()) {
-        strudelRef.current = await initStrudel();
+        // Poll initialization progress for UI updates
+        const progressInterval = setInterval(() => {
+          setInitStatus(getInitProgress());
+        }, 100);
+        
+        try {
+          strudelRef.current = await initStrudel();
+        } finally {
+          clearInterval(progressInterval);
+          setInitStatus('ready');
+        }
       }
       
       await strudelRef.current.evaluate(currentCode);
@@ -199,7 +210,9 @@ export function CodePanel() {
             {isInitializing ? (
               <>
                 <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                Loading...
+                {initStatus === 'audio' && 'Starting audio...'}
+                {initStatus === 'samples' && 'Loading samples...'}
+                {(initStatus === 'idle' || initStatus === 'ready') && 'Starting...'}
               </>
             ) : isPlaying ? (
               <>

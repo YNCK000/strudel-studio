@@ -18,6 +18,14 @@ let strudelRepl: any = null;
 let isInitialized = false;
 let samplesLoaded = false;
 let audioContext: AudioContext | null = null;
+let initProgress: 'idle' | 'audio' | 'samples' | 'ready' = 'idle';
+
+/**
+ * Get current initialization progress
+ */
+export function getInitProgress(): typeof initProgress {
+  return initProgress;
+}
 
 /**
  * Check if we're running in the browser
@@ -44,6 +52,7 @@ export async function initStrudel(): Promise<StrudelInstance> {
 
   try {
     console.log('[Strudel] Initializing...');
+    initProgress = 'audio';
 
     // Create audio context (requires user interaction)
     audioContext = new AudioContext();
@@ -84,6 +93,7 @@ export async function initStrudel(): Promise<StrudelInstance> {
     // Load default sample bank (dirt-samples) from strudel.cc CDN
     // This provides bd, hh, sd, cp, etc.
     if (!samplesLoaded) {
+      initProgress = 'samples';
       console.log('[Strudel] Loading samples from strudel.cc...');
       try {
         await webaudio.samples('https://strudel.cc/strudel.json');
@@ -116,6 +126,7 @@ export async function initStrudel(): Promise<StrudelInstance> {
     });
 
     isInitialized = true;
+    initProgress = 'ready';
     console.log('[Strudel] Initialized successfully');
 
     return {
@@ -126,6 +137,7 @@ export async function initStrudel(): Promise<StrudelInstance> {
     };
   } catch (error) {
     console.error('[Strudel] Initialization failed:', error);
+    initProgress = 'idle';
     throw error;
   }
 }
