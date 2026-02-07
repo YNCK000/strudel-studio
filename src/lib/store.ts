@@ -52,7 +52,7 @@ stack(
         ...state.messages,
         {
           ...message,
-          id: crypto.randomUUID(),
+          id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
           createdAt: new Date(),
         },
       ],
