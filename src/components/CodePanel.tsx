@@ -138,15 +138,15 @@ export function CodePanel() {
   return (
     <div className="flex flex-col h-full bg-zinc-925">
       {/* Header */}
-      <div className="px-5 py-4 border-b border-zinc-800/60 bg-zinc-900/50">
+      <div className="px-3 sm:px-5 py-3 sm:py-4 border-b border-zinc-800/60 bg-zinc-900/50">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800/80">
+          <div className="flex items-center gap-2 sm:gap-3">
+            <div className="hidden sm:flex items-center justify-center w-7 h-7 rounded-lg bg-zinc-800/80">
               <Code2 className="w-4 h-4 text-zinc-400" />
             </div>
             <div>
               <h2 className="text-sm font-medium text-white">Code Editor</h2>
-              <p className="text-[11px] text-zinc-500">
+              <p className="text-[10px] sm:text-[11px] text-zinc-500">
                 {lineCount} line{lineCount !== 1 ? 's' : ''} · Strudel pattern
               </p>
             </div>
@@ -195,13 +195,13 @@ export function CodePanel() {
       <div ref={editorRef} className="flex-1 overflow-hidden" />
 
       {/* Playback Controls */}
-      <div className="px-5 py-4 border-t border-zinc-800/60 bg-zinc-900/50">
-        <div className="flex items-center gap-4">
+      <div className="px-3 sm:px-5 py-3 sm:py-4 border-t border-zinc-800/60 bg-zinc-900/50">
+        <div className="flex items-center gap-2 sm:gap-4 flex-wrap">
           {/* Play/Stop Button */}
           <Button
             onClick={handlePlay}
             disabled={isInitializing}
-            className={`h-11 px-6 rounded-xl font-medium text-sm transition-all duration-200 ${
+            className={`h-10 sm:h-11 px-4 sm:px-6 rounded-xl font-medium text-sm transition-all duration-200 ${
               isPlaying 
                 ? 'bg-red-600 hover:bg-red-500 shadow-lg shadow-red-500/20' 
                 : 'bg-green-600 hover:bg-green-500 shadow-lg shadow-green-500/20'
@@ -209,26 +209,29 @@ export function CodePanel() {
           >
             {isInitializing ? (
               <>
-                <Loader2 className="w-4 h-4 mr-2 animate-spin" />
-                {initStatus === 'audio' && 'Starting audio...'}
-                {initStatus === 'samples' && 'Loading samples...'}
-                {(initStatus === 'idle' || initStatus === 'ready') && 'Starting...'}
+                <Loader2 className="w-4 h-4 mr-1 sm:mr-2 animate-spin" />
+                <span className="hidden sm:inline">
+                  {initStatus === 'audio' && 'Starting audio...'}
+                  {initStatus === 'samples' && 'Loading samples...'}
+                  {(initStatus === 'idle' || initStatus === 'ready') && 'Starting...'}
+                </span>
+                <span className="sm:hidden">Loading...</span>
               </>
             ) : isPlaying ? (
               <>
-                <Square className="w-4 h-4 mr-2 fill-current" />
+                <Square className="w-4 h-4 mr-1 sm:mr-2 fill-current" />
                 Stop
               </>
             ) : (
               <>
-                <Play className="w-4 h-4 mr-2 fill-current" />
+                <Play className="w-4 h-4 mr-1 sm:mr-2 fill-current" />
                 Play
               </>
             )}
           </Button>
           
           {/* Volume Control */}
-          <div className="flex items-center gap-3 px-4 py-2 rounded-xl bg-zinc-800/40 border border-zinc-800/60">
+          <div className="flex items-center gap-2 sm:gap-3 px-3 sm:px-4 py-2 rounded-xl bg-zinc-800/40 border border-zinc-800/60">
             <Volume2 className={`w-4 h-4 ${volumeValue > 0 ? 'text-zinc-400' : 'text-zinc-600'}`} />
             <input
               type="range"
@@ -236,13 +239,13 @@ export function CodePanel() {
               max="100"
               value={volumeValue}
               onChange={(e) => setVolumeValue(Number(e.target.value))}
-              className="w-20"
+              className="w-16 sm:w-20"
             />
             <span className="text-xs text-zinc-500 w-8 text-right tabular-nums">{volumeValue}%</span>
           </div>
           
-          {/* Keyboard Shortcut Hint */}
-          <div className="ml-auto flex items-center gap-2 text-xs text-zinc-600">
+          {/* Keyboard Shortcut Hint - Desktop only */}
+          <div className="hidden lg:flex ml-auto items-center gap-2 text-xs text-zinc-600">
             <Keyboard className="w-3.5 h-3.5" />
             <span>
               <kbd className="px-1.5 py-0.5 rounded bg-zinc-800/60 border border-zinc-700/50 text-zinc-500 font-mono text-[10px]">⌘</kbd>

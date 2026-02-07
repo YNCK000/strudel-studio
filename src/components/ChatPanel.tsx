@@ -205,9 +205,9 @@ export function ChatPanel() {
   return (
     <div className="flex flex-col h-full bg-zinc-950 border-r border-zinc-800">
       {/* Header */}
-      <div className="p-4 border-b border-zinc-800">
+      <div className="p-3 sm:p-4 border-b border-zinc-800">
         <div className="flex items-center justify-between mb-1">
-          <h2 className="text-lg font-semibold text-white flex items-center gap-2">
+          <h2 className="text-base sm:text-lg font-semibold text-white flex items-center gap-2">
             💬 Chat
           </h2>
           
@@ -330,15 +330,13 @@ export function ChatPanel() {
       </ScrollArea>
 
       {/* Input */}
-      <form onSubmit={handleSubmit} className="p-4 border-t border-zinc-800">
+      <form onSubmit={handleSubmit} className="p-3 sm:p-4 border-t border-zinc-800">
         <div className="flex gap-2">
           <Textarea
             value={input}
             onChange={(e) => setInput(e.target.value)}
-            placeholder={mode === 'agent' 
-              ? "Describe your track..." 
-              : "Describe your track..."}
-            className="min-h-[60px] max-h-[120px] bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 resize-none"
+            placeholder="Describe your track..."
+            className="min-h-[50px] sm:min-h-[60px] max-h-[100px] sm:max-h-[120px] bg-zinc-900 border-zinc-700 text-white placeholder:text-zinc-500 resize-none text-sm sm:text-base"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && !e.shiftKey) {
                 e.preventDefault();
@@ -349,7 +347,7 @@ export function ChatPanel() {
           <Button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className={`self-end ${
+            className={`self-end h-10 w-10 sm:h-auto sm:w-auto sm:px-4 ${
               mode === 'agent' 
                 ? 'bg-purple-600 hover:bg-purple-700' 
                 : 'bg-zinc-700 hover:bg-zinc-600'

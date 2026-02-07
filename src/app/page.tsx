@@ -1,18 +1,22 @@
 'use client';
 
+import { useState } from 'react';
 import { ChatPanel } from '@/components/ChatPanel';
 import { CodePanel } from '@/components/CodePanel';
+import { MessageSquare, Code2 } from 'lucide-react';
 
 export default function Home() {
+  const [mobileView, setMobileView] = useState<'chat' | 'code'>('chat');
+
   return (
     <main className="h-screen bg-zinc-950 text-white flex flex-col">
       {/* Header */}
-      <header className="h-14 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-between px-5 relative z-10">
-        <div className="flex items-center gap-3">
+      <header className="h-14 border-b border-zinc-800/80 bg-zinc-950/95 backdrop-blur-sm flex items-center justify-between px-3 sm:px-5 relative z-10">
+        <div className="flex items-center gap-2 sm:gap-3">
           {/* Logo */}
-          <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
+          <div className="flex items-center justify-center w-7 h-7 sm:w-8 sm:h-8 rounded-lg bg-gradient-to-br from-purple-500 to-purple-700 shadow-lg shadow-purple-500/20">
             <svg 
-              className="w-5 h-5 text-white" 
+              className="w-4 h-4 sm:w-5 sm:h-5 text-white" 
               viewBox="0 0 24 24" 
               fill="currentColor"
             >
@@ -21,8 +25,8 @@ export default function Home() {
           </div>
           
           <div className="flex items-center gap-2">
-            <span className="font-semibold text-base tracking-tight">Strudel Studio</span>
-            <span className="text-[10px] font-medium bg-purple-500/15 text-purple-400 px-1.5 py-0.5 rounded uppercase tracking-wider">
+            <span className="font-semibold text-sm sm:text-base tracking-tight">Strudel Studio</span>
+            <span className="hidden sm:inline text-[10px] font-medium bg-purple-500/15 text-purple-400 px-1.5 py-0.5 rounded uppercase tracking-wider">
               Beta
             </span>
           </div>
@@ -33,7 +37,7 @@ export default function Home() {
             href="https://strudel.cc/learn" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-sm text-zinc-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-zinc-800/60 transition-all duration-150"
+            className="hidden sm:block text-sm text-zinc-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-zinc-800/60 transition-all duration-150"
           >
             Learn
           </a>
@@ -41,11 +45,11 @@ export default function Home() {
             href="https://strudel.cc/reference" 
             target="_blank" 
             rel="noopener noreferrer"
-            className="text-sm text-zinc-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-zinc-800/60 transition-all duration-150"
+            className="hidden sm:block text-sm text-zinc-400 hover:text-white px-3 py-1.5 rounded-md hover:bg-zinc-800/60 transition-all duration-150"
           >
             Docs
           </a>
-          <div className="w-px h-4 bg-zinc-800 mx-1" />
+          <div className="hidden sm:block w-px h-4 bg-zinc-800 mx-1" />
           <a 
             href="https://github.com/YNCK000/strudel-studio" 
             target="_blank" 
@@ -60,8 +64,34 @@ export default function Home() {
         </nav>
       </header>
 
-      {/* Main Content */}
-      <div className="flex-1 flex overflow-hidden">
+      {/* Mobile Tab Navigation */}
+      <div className="md:hidden flex border-b border-zinc-800">
+        <button
+          onClick={() => setMobileView('chat')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+            mobileView === 'chat' 
+              ? 'text-purple-400 border-b-2 border-purple-400 bg-purple-500/5' 
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <MessageSquare className="w-4 h-4" />
+          Chat
+        </button>
+        <button
+          onClick={() => setMobileView('code')}
+          className={`flex-1 flex items-center justify-center gap-2 py-3 text-sm font-medium transition-colors ${
+            mobileView === 'code' 
+              ? 'text-purple-400 border-b-2 border-purple-400 bg-purple-500/5' 
+              : 'text-zinc-400 hover:text-zinc-200'
+          }`}
+        >
+          <Code2 className="w-4 h-4" />
+          Code
+        </button>
+      </div>
+
+      {/* Main Content - Desktop */}
+      <div className="hidden md:flex flex-1 overflow-hidden">
         {/* Chat Panel - Left */}
         <div className="w-1/2 lg:w-2/5 panel-divider">
           <ChatPanel />
@@ -71,6 +101,15 @@ export default function Home() {
         <div className="w-1/2 lg:w-3/5 bg-zinc-900">
           <CodePanel />
         </div>
+      </div>
+
+      {/* Main Content - Mobile */}
+      <div className="flex-1 md:hidden overflow-hidden">
+        {mobileView === 'chat' ? (
+          <ChatPanel />
+        ) : (
+          <CodePanel />
+        )}
       </div>
     </main>
   );
