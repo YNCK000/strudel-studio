@@ -202,7 +202,8 @@ body {
 
 /* Focus ring */
 .focus-ring {
-  @apply outline-none ring-2 ring-purple-500/50 ring-offset-2 ring-offset-zinc-950;
+  outline: none;
+  box-shadow: 0 0 0 2px hsl(var(--background)), 0 0 0 4px hsl(var(--primary) / 0.5);
 }
 
 /* Glass effect for panels */
@@ -217,7 +218,7 @@ body {
 
 /* Message bubble styling */
 .message-bubble {
-  @apply relative;
+  position: relative;
 }
 
 .message-bubble::before {
