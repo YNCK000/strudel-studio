@@ -16,6 +16,7 @@ export interface StrudelInstance {
 // Global state
 let strudelRepl: any = null;
 let isInitialized = false;
+let samplesLoaded = false;
 let audioContext: AudioContext | null = null;
 
 /**
@@ -79,6 +80,27 @@ export async function initStrudel(): Promise<StrudelInstance> {
       webaudio,
       tonal,
     );
+
+    // Load default sample bank (dirt-samples) from strudel.cc CDN
+    // This provides bd, hh, sd, cp, etc.
+    if (!samplesLoaded) {
+      console.log('[Strudel] Loading samples from strudel.cc...');
+      try {
+        await webaudio.samples('https://strudel.cc/strudel.json');
+        samplesLoaded = true;
+        console.log('[Strudel] Samples loaded successfully');
+      } catch (sampleError) {
+        console.warn('[Strudel] Failed to load remote samples, trying github fallback:', sampleError);
+        try {
+          // Fallback to direct github source
+          await webaudio.samples('github:tidalcycles/dirt-samples');
+          samplesLoaded = true;
+          console.log('[Strudel] Samples loaded from github fallback');
+        } catch (fallbackError) {
+          console.warn('[Strudel] Could not load samples, synth sounds will still work:', fallbackError);
+        }
+      }
+    }
 
     // Create the REPL instance
     strudelRepl = repl({

@@ -65,7 +65,14 @@ declare module '@strudel/webaudio' {
   export function initAudio(): Promise<void>;
   export function getAudioContext(): AudioContext;
   export function webaudioOutput(hap: any, deadline: number, duration: number, cps: number, t: number): Promise<void>;
+  export function samples(sampleMap: string | Record<string, any>, baseUrl?: string, options?: { prebake?: boolean; tag?: string }): Promise<void>;
   export * from '@strudel/webaudio';
+}
+
+declare module 'superdough' {
+  export function samples(sampleMap: string | Record<string, any>, baseUrl?: string, options?: { prebake?: boolean; tag?: string }): Promise<void>;
+  export function registerSound(key: string, onTrigger: any, data?: Record<string, any>): void;
+  export * from 'superdough';
 }
 
 declare module '@strudel/tonal' {
