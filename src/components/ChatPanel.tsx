@@ -4,158 +4,169 @@ import { useState, useRef, useEffect, useCallback, memo } from 'react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { useStudioStore, extractCode, type Message } from '@/lib/store';
-import { Send, Loader2, RefreshCw, Zap, Sparkles, CheckCircle, Clock, Trash2, ArrowRight } from 'lucide-react';
+import { Send, Loader2, RefreshCw, Zap, MessageSquare, CheckCircle2, Clock, Trash2, Sparkles, Music, Drum, Waves } from 'lucide-react';
 
 type Mode = 'simple' | 'agent';
 
-// Suggestion prompts
+// Quick prompt suggestions
 const SUGGESTIONS = [
-  'techno beat at 130 BPM',
-  'chill lo-fi vibes',
-  'acid house bassline',
-  'ambient textures',
+  { icon: Drum, label: 'Techno beat 130 BPM', prompt: 'Create a driving techno beat at 130 BPM with kick, hi-hats, and claps' },
+  { icon: Waves, label: 'Ambient soundscape', prompt: 'Make a dreamy ambient soundscape with pads and subtle textures' },
+  { icon: Music, label: 'Lo-fi hip hop', prompt: 'Generate a chill lo-fi hip hop beat with vinyl crackle and smooth chords' },
+  { icon: Sparkles, label: 'Random pattern', prompt: 'Surprise me with something creative and experimental' },
 ];
 
-// Loading states
-const LOADING_STATES = [
+// Loading messages that cycle during agent processing
+const LOADING_MESSAGES = [
   'Understanding your request...',
-  'Composing patterns...',
+  'Composing the pattern...',
+  'Adding sonic details...',
   'Validating syntax...',
-  'Finalizing...',
 ];
 
 const LoadingIndicator = memo(function LoadingIndicator({ mode }: { mode: Mode }) {
-  const [stateIndex, setStateIndex] = useState(0);
+  const [messageIndex, setMessageIndex] = useState(0);
 
   useEffect(() => {
     if (mode !== 'agent') return;
     const interval = setInterval(() => {
-      setStateIndex((i) => (i + 1) % LOADING_STATES.length);
+      setMessageIndex((i) => (i + 1) % LOADING_MESSAGES.length);
     }, 2500);
     return () => clearInterval(interval);
   }, [mode]);
 
   return (
     <div className="flex items-center gap-3">
-      <div className="flex items-center gap-1">
-        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />
-        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.2s' }} />
-        <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" style={{ animationDelay: '0.4s' }} />
+      <div className="typing-indicator">
+        <span />
+        <span />
+        <span />
       </div>
-      <span className="text-sm text-zinc-400">
-        {mode === 'agent' ? LOADING_STATES[stateIndex] : 'Generating...'}
-      </span>
+      {mode === 'agent' && (
+        <span className="text-sm text-zinc-400">
+          {LOADING_MESSAGES[messageIndex]}
+        </span>
+      )}
     </div>
   );
 });
 
+// Memoized message component
 const ChatMessage = memo(function ChatMessage({ 
   message, 
+  isLast,
   isLoading, 
   mode,
-  retryMessage,
   onRetry 
 }: { 
-  message: Message; 
+  message: Message;
+  isLast: boolean;
   isLoading: boolean;
   mode: Mode;
-  retryMessage: string | null;
   onRetry: () => void;
 }) {
   const isUser = message.role === 'user';
+  const hasError = message.content.includes('⚠️');
   
   return (
     <div className={`flex ${isUser ? 'justify-end' : 'justify-start'} animate-fade-in`}>
       <div
-        className={`max-w-[88%] rounded-2xl px-4 py-3 ${
+        className={`max-w-[88%] px-4 py-3 ${
           isUser
-            ? 'message-user text-white'
-            : 'message-assistant text-zinc-100'
+            ? 'message-user'
+            : 'message-assistant'
         }`}
       >
-        <div className="whitespace-pre-wrap text-[14px] leading-relaxed">
-          {message.content || (isLoading && <LoadingIndicator mode={mode} />)}
+        {/* Message Content */}
+        <div className="text-[14px] leading-relaxed whitespace-pre-wrap">
+          {message.content || (isLast && isLoading && <LoadingIndicator mode={mode} />)}
         </div>
         
-        {/* Metadata */}
-        {message.role === 'assistant' && 
-         message.validated !== undefined && 
-         !message.content.includes('⚠️') && (
-          <div className="mt-2 pt-2 border-t border-white/5 flex items-center gap-3 text-xs">
+        {/* Metadata for successful generations */}
+        {!isUser && message.validated !== undefined && !hasError && (
+          <div className="mt-3 pt-2 border-t border-zinc-700/50 flex items-center gap-3 text-xs">
             <span className="flex items-center gap-1.5 text-emerald-400">
-              <CheckCircle className="w-3 h-3" />
+              <CheckCircle2 className="w-3.5 h-3.5" />
               Validated
             </span>
             {message.timeMs && (
               <span className="flex items-center gap-1.5 text-zinc-500">
-                <Clock className="w-3 h-3" />
+                <Clock className="w-3.5 h-3.5" />
                 {(message.timeMs / 1000).toFixed(1)}s
+              </span>
+            )}
+            {message.iterations && message.iterations > 1 && (
+              <span className="text-zinc-500">
+                {message.iterations} attempts
               </span>
             )}
           </div>
         )}
         
-        {/* Retry */}
-        {message.role === 'assistant' && 
-         message.content.includes('⚠️') && 
-         retryMessage && 
-         !isLoading && (
-          <Button
-            variant="outline"
-            size="sm"
+        {/* Retry button for errors */}
+        {!isUser && hasError && !isLoading && (
+          <button
             onClick={onRetry}
-            className="mt-3 h-8 border-zinc-700 text-zinc-300 hover:bg-zinc-800 hover:text-white"
+            className="mt-3 flex items-center gap-1.5 text-xs font-medium text-violet-400 hover:text-violet-300 transition-colors"
           >
-            <RefreshCw className="w-3 h-3 mr-1.5" />
-            Retry
-          </Button>
+            <RefreshCw className="w-3.5 h-3.5" />
+            Try again
+          </button>
         )}
       </div>
     </div>
   );
 });
 
-const WelcomeScreen = memo(function WelcomeScreen({ 
+// Welcome state with suggestions
+const WelcomeState = memo(function WelcomeState({ 
   mode, 
   onSuggestionClick 
 }: { 
   mode: Mode;
-  onSuggestionClick: (text: string) => void;
+  onSuggestionClick: (prompt: string) => void;
 }) {
   return (
     <div className="flex flex-col items-center justify-center h-full px-6 py-12 animate-fade-in">
-      {/* Logo */}
-      <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-purple-600 flex items-center justify-center mb-6 shadow-lg shadow-violet-500/20">
-        <svg className="w-8 h-8 text-white" viewBox="0 0 24 24" fill="currentColor">
-          <path d="M12 3v10.55c-.59-.34-1.27-.55-2-.55-2.21 0-4 1.79-4 4s1.79 4 4 4 4-1.79 4-4V7h4V3h-6z"/>
-        </svg>
+      {/* Hero */}
+      <div className="text-center mb-8">
+        <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/20 to-purple-500/20 border border-violet-500/20 mb-4">
+          <Music className="w-8 h-8 text-violet-400" />
+        </div>
+        <h2 className="text-xl font-semibold text-white mb-2">
+          Create music with AI
+        </h2>
+        <p className="text-[14px] text-zinc-400 max-w-[280px]">
+          Describe what you want to hear and let AI generate Strudel patterns for you.
+        </p>
       </div>
       
-      <h1 className="text-2xl font-semibold text-white mb-2">
-        What music shall we make?
-      </h1>
-      <p className="text-zinc-500 text-center mb-8 max-w-sm">
-        Describe your track and I&apos;ll generate Strudel code for you
-      </p>
-      
-      {/* Suggestion chips */}
-      <div className="flex flex-wrap justify-center gap-2 max-w-md">
+      {/* Suggestion Chips */}
+      <div className="w-full max-w-[340px] space-y-2">
+        <p className="text-xs font-medium text-zinc-500 uppercase tracking-wider mb-3">
+          Try these
+        </p>
         {SUGGESTIONS.map((suggestion) => (
           <button
-            key={suggestion}
-            onClick={() => onSuggestionClick(suggestion)}
-            className="suggestion-chip flex items-center gap-2 group"
+            key={suggestion.label}
+            onClick={() => onSuggestionClick(suggestion.prompt)}
+            className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-zinc-900 border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 transition-all text-left group"
           >
-            <span>{suggestion}</span>
-            <ArrowRight className="w-3 h-3 opacity-0 -translate-x-1 group-hover:opacity-100 group-hover:translate-x-0 transition-all" />
+            <div className="flex items-center justify-center w-8 h-8 rounded-lg bg-zinc-950 group-hover:bg-violet-500/10 transition-colors">
+              <suggestion.icon className="w-4 h-4 text-zinc-400 group-hover:text-violet-400 transition-colors" />
+            </div>
+            <span className="text-[13px] font-medium text-zinc-400 group-hover:text-white transition-colors">
+              {suggestion.label}
+            </span>
           </button>
         ))}
       </div>
       
+      {/* Mode indicator */}
       {mode === 'agent' && (
         <div className="mt-8 flex items-center gap-2 text-xs text-violet-400/70 bg-violet-500/10 rounded-full px-4 py-2">
-          <Zap className="w-3 h-3" />
-          Agent mode validates your code automatically
+          <Zap className="w-3.5 h-3.5" />
+          Agent mode validates code automatically
         </div>
       )}
     </div>
@@ -167,24 +178,22 @@ export function ChatPanel() {
   const [mode, setMode] = useState<Mode>('agent');
   const [retryMessage, setRetryMessage] = useState<string | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const { messages, isLoading, addMessage, updateLastMessage, setIsLoading, setCurrentCode, clearMessages } = useStudioStore();
 
-  // Auto-scroll
+  // Auto-scroll to bottom
   useEffect(() => {
     if (scrollRef.current) {
       scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
     }
   }, [messages]);
 
-  // Auto-resize textarea
+  // Focus input on mount
   useEffect(() => {
-    if (textareaRef.current) {
-      textareaRef.current.style.height = 'auto';
-      textareaRef.current.style.height = Math.min(textareaRef.current.scrollHeight, 160) + 'px';
-    }
-  }, [input]);
+    inputRef.current?.focus();
+  }, []);
 
+  // Parse SSE event from stream chunk
   const parseSSE = (chunk: string): Array<{ event: string; data: unknown }> => {
     const events: Array<{ event: string; data: unknown }> = [];
     const lines = chunk.split('\n');
@@ -200,7 +209,7 @@ export function ChatPanel() {
           try {
             events.push({ event: currentEvent, data: JSON.parse(currentData) });
           } catch {
-            // ignore parse errors
+            console.warn('Failed to parse SSE data:', currentData);
           }
           currentEvent = '';
           currentData = '';
@@ -266,7 +275,6 @@ export function ChatPanel() {
               case 'status':
               case 'progress':
               case 'tools':
-                updateLastMessage(`⏳ ${eventData.message || 'Processing...'}`);
                 break;
                 
               case 'complete':
@@ -308,7 +316,7 @@ export function ChatPanel() {
     } catch (error) {
       console.error('Chat error:', error);
       const errorMsg = error instanceof Error ? error.message : 'Something went wrong';
-      updateLastMessage(`⚠️ ${errorMsg}\n\nClick retry or try a different request.`);
+      updateLastMessage(`⚠️ ${errorMsg}\n\nTry simplifying your request or click retry.`);
     } finally {
       setIsLoading(false);
     }
@@ -325,125 +333,130 @@ export function ChatPanel() {
     if (retryMessage) sendMessage(retryMessage);
   };
 
-  const handleSuggestionClick = (suggestion: string) => {
-    sendMessage(suggestion);
+  const handleSuggestionClick = (prompt: string) => {
+    sendMessage(prompt);
   };
 
   return (
-    <div className="flex flex-col h-full bg-[#0a0a0a]">
+    <div className="flex flex-col h-full bg-zinc-950">
       {/* Header */}
-      <div className="px-4 sm:px-5 py-3.5 border-b border-zinc-800/80 flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          {/* Mode Toggle - Pill style */}
-          <div className="flex items-center p-1 bg-zinc-900 rounded-lg">
+      <div className="px-4 sm:px-5 py-3.5 border-b border-zinc-800 flex items-center justify-between">
+        <div className="flex items-center gap-2">
+          <h2 className="text-[15px] font-semibold text-white">Chat</h2>
+          {messages.length > 0 && (
+            <span className="text-xs text-zinc-500 bg-zinc-900 px-2 py-0.5 rounded-full">
+              {messages.length}
+            </span>
+          )}
+        </div>
+        
+        <div className="flex items-center gap-2">
+          {/* Clear Button */}
+          {messages.length > 0 && (
+            <button
+              onClick={clearMessages}
+              className="p-2 rounded-lg text-zinc-500 hover:text-white hover:bg-zinc-800 transition-colors"
+              title="Clear chat"
+            >
+              <Trash2 className="w-4 h-4" />
+            </button>
+          )}
+          
+          {/* Mode Toggle */}
+          <div className="flex items-center bg-zinc-900 rounded-lg p-1">
             <button
               onClick={() => setMode('simple')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 mode === 'simple' 
                   ? 'bg-zinc-800 text-white shadow-sm' 
-                  : 'text-zinc-500 hover:text-zinc-300'
+                  : 'text-zinc-500 hover:text-white'
               }`}
             >
-              <Sparkles className="w-3 h-3" />
+              <MessageSquare className="w-3.5 h-3.5" />
               Simple
             </button>
             <button
               onClick={() => setMode('agent')}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-md text-xs font-medium transition-all ${
+              className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium transition-all ${
                 mode === 'agent' 
                   ? 'bg-violet-600 text-white shadow-sm' 
-                  : 'text-zinc-500 hover:text-zinc-300'
+                  : 'text-zinc-500 hover:text-white'
               }`}
             >
-              <Zap className="w-3 h-3" />
+              <Zap className="w-3.5 h-3.5" />
               Agent
             </button>
           </div>
         </div>
-        
-        {/* Clear */}
-        {messages.length > 0 && (
-          <button
-            onClick={clearMessages}
-            className="text-zinc-500 hover:text-zinc-300 p-2 rounded-lg hover:bg-white/5 transition-all"
-            title="Clear chat"
-          >
-            <Trash2 className="w-4 h-4" />
-          </button>
-        )}
       </div>
 
-      {/* Messages or Welcome */}
-      {messages.length === 0 ? (
-        <WelcomeScreen mode={mode} onSuggestionClick={handleSuggestionClick} />
-      ) : (
-        <ScrollArea className="flex-1 p-4" ref={scrollRef}>
-          <div className="space-y-4">
-            {messages.map((message) => (
+      {/* Messages Area */}
+      <ScrollArea className="flex-1" ref={scrollRef}>
+        {messages.length === 0 ? (
+          <WelcomeState mode={mode} onSuggestionClick={handleSuggestionClick} />
+        ) : (
+          <div className="p-4 space-y-4">
+            {messages.map((message, index) => (
               <ChatMessage 
                 key={message.id}
                 message={message}
+                isLast={index === messages.length - 1}
                 isLoading={isLoading}
                 mode={mode}
-                retryMessage={retryMessage}
                 onRetry={handleRetry}
               />
             ))}
           </div>
-        </ScrollArea>
-      )}
+        )}
+      </ScrollArea>
 
-      {/* Input Area - v0 style */}
-      <div className="p-4 border-t border-zinc-800/80">
+      {/* Input Area */}
+      <div className="p-3 sm:p-4 border-t border-zinc-800 bg-zinc-950">
         <form onSubmit={handleSubmit}>
-          <div className="relative bg-zinc-900 rounded-2xl border border-zinc-800 transition-all input-glow focus-within:border-zinc-700">
+          <div className="relative">
             <textarea
-              ref={textareaRef}
+              ref={inputRef}
               value={input}
               onChange={(e) => setInput(e.target.value)}
-              placeholder="Describe your track..."
+              placeholder="Describe your music..."
               rows={1}
-              className="w-full bg-transparent text-white text-[15px] placeholder:text-zinc-600 resize-none focus:outline-none px-4 py-4 pr-14 min-h-[56px] max-h-[160px]"
+              className="w-full min-h-[52px] max-h-[140px] px-4 py-3.5 pr-14 bg-zinc-900 border border-zinc-800 rounded-xl text-[14px] text-white placeholder:text-zinc-500 resize-none focus:outline-none focus:border-violet-500/50 focus:ring-2 focus:ring-violet-500/20 transition-all"
               onKeyDown={(e) => {
                 if (e.key === 'Enter' && !e.shiftKey) {
                   e.preventDefault();
                   handleSubmit(e);
                 }
               }}
+              style={{
+                height: 'auto',
+                minHeight: '52px',
+              }}
+              onInput={(e) => {
+                const target = e.target as HTMLTextAreaElement;
+                target.style.height = 'auto';
+                target.style.height = `${Math.min(target.scrollHeight, 140)}px`;
+              }}
             />
             <Button
               type="submit"
               disabled={isLoading || !input.trim()}
-              size="icon"
-              className={`absolute right-2 bottom-2 h-10 w-10 rounded-xl transition-all ${
+              className={`absolute right-2 bottom-2 h-9 w-9 p-0 rounded-lg transition-all ${
                 input.trim() && !isLoading
-                  ? 'bg-violet-600 hover:bg-violet-500 text-white' 
+                  ? 'bg-violet-600 hover:bg-violet-500 text-white shadow-lg shadow-violet-500/25'
                   : 'bg-zinc-800 text-zinc-500'
               }`}
             >
               {isLoading ? (
                 <Loader2 className="w-4 h-4 animate-spin" />
               ) : (
-                <ArrowRight className="w-4 h-4" />
+                <Send className="w-4 h-4" />
               )}
             </Button>
           </div>
+          <p className="mt-2 text-[11px] text-zinc-500 text-center">
+            Press <kbd>Enter</kbd> to send · <kbd>Shift+Enter</kbd> for new line
+          </p>
         </form>
-        
-        {/* Quick suggestions when chat has messages */}
-        {messages.length > 0 && !isLoading && (
-          <div className="flex flex-wrap gap-2 mt-3">
-            {['make it faster', 'add bass', 'more minimal'].map((quick) => (
-              <button
-                key={quick}
-                onClick={() => sendMessage(quick)}
-                className="text-xs text-zinc-500 hover:text-zinc-300 px-3 py-1.5 rounded-full border border-zinc-800 hover:border-zinc-700 hover:bg-zinc-800/50 transition-all"
-              >
-                {quick}
-              </button>
-            ))}
-          </div>
-        )}
       </div>
     </div>
   );
